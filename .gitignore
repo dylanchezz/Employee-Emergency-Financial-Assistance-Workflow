@@ -1,0 +1,61 @@
+# ==== Secrets — never commit these ====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+appsettings.Development.json
+appsettings.Production.json
+
+# ==== Node / Next.js (frontend) ====
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.turbo/
+frontend/dist/
+
+# ==== .NET / ASP.NET Core (backend) ====
+backend/bin/
+backend/obj/
+backend/*.user
+backend/.vs/
+backend/*.suo
+
+# ==== Python / FastAPI (ml-service) ====
+ml-service/__pycache__/
+ml-service/*.pyc
+ml-service/.venv/
+ml-service/venv/
+ml-service/env/
+ml-service/*.egg-info/
+ml-service/.pytest_cache/
+ml-service/.mypy_cache/
+
+# Trained model artifacts — track intentionally via releases/LFS, not raw commits
+ml-service/models/*.joblib
+ml-service/models/*.pkl
+
+# Generated / raw data — synthetic dataset generation should be reproducible from
+# the documented script + fixed seed, not committed as a large binary/CSV blob
+ml-service/data/raw/
+ml-service/data/processed/
+!ml-service/data/.gitkeep
+
+# ==== Databases ====
+*.sqlite3
+*.db
+
+# ==== OS / editor noise ====
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ==== Logs ====
+*.log
+logs/
