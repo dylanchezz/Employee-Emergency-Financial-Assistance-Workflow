@@ -6,8 +6,6 @@ Forest** classification model to predict request urgency as **Low**, **Medium**,
 Priority, supporting urgency-based queue ranking, visual priority flagging, and faster escalation
 within a structured four-tier approval workflow.
 
-> Final year Capstone Project — BSc. Informatics and Computer Science, Strathmore University.
-> Author: Saisi Dylan Musalia (158490) · Supervisor: Mr. Emmanuel Olang'
 
 ## Problem
 
