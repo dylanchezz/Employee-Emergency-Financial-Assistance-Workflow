@@ -48,6 +48,18 @@ CREATE TABLE welfare_requests (
                    )),
     amount         NUMERIC(12,2) NOT NULL CHECK (amount > 0),
     description    TEXT,
+
+    -- Model-input snapshot: the feature values submitted with (or derived for)
+    -- the request. Stored for reproducibility and audit; the model also uses
+    -- them live at classification time. salary and employment_duration_months
+    -- come from the submitter; previous_requests and request_frequency are
+    -- derived by the system from the user's request history.
+    salary                     NUMERIC(12,2),
+    employment_duration_months INTEGER,
+    previous_requests          INTEGER,
+    request_frequency          INTEGER,
+    has_documents              INTEGER,
+
     status         VARCHAR(30) NOT NULL DEFAULT 'Submitted'
                    CHECK (status IN (
                        'Submitted',
