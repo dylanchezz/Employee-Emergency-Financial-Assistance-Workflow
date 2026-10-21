@@ -6,7 +6,11 @@ using Dapper;
 using Microsoft.OpenApi;
 using Microsoft.IdentityModel.Tokens;
 using backend.Auth;
+using backend.Requests;
+using System.IdentityModel.Tokens.Jwt;
 
+// Keep JWT claim names as-is (don't remap "sub" to the long .NET URI).
+JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 var builder = WebApplication.CreateBuilder(args);
 
 //Add services to the container
@@ -33,6 +37,7 @@ builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddSingleton<IDbConnectionFactory, DbConnectionFactory>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IWelfareRequestRepository, WelfareRequestRepository>();
 
 builder.Services.AddAuthentication("Bearer")
     .AddJwtBearer("Bearer", options =>
@@ -101,4 +106,5 @@ app.MapGet("/api/health/db", async (IDbConnectionFactory factory) =>
 
 app.MapAuthEndpoints();
 app.MapProtectedTestEndpoints();
+app.MapRequestEndpoints();
 app.Run();
