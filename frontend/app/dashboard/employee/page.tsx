@@ -20,13 +20,13 @@ export default function EmployeeDashboard() {
 
     return (
         <main className="min-h-screen p-10">
-            <h1 className="font-[family-name:var(--font-heading)} text-3xl font-bold text-ink">
+            <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
                 Employee Dashboard
             </h1>
             <p className="mt-2 text-ink-soft">
-                Signed in as {name} . {role}
+                Signed in as {name} · {role}
             </p>
-            <div className="mt-8 rounded-xl border vorder-line bg-surface p-8 text-ink-soft">
+            <div className="mt-8 rounded-xl border border-line bg-surface p-8 text-ink-soft">
                 Your requests will appear here. (To be done later)
             </div>
         </main>
