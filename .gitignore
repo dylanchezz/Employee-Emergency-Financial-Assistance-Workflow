@@ -26,8 +26,8 @@ backend/.vs/
 backend/*.suo
 
 # ==== Python / FastAPI (ml-service) ====
-ml-service/__pycache__/
-ml-service/*.pyc
+**/__pycache__/
+*.pyc
 ml-service/.venv/
 ml-service/venv/
 ml-service/env/
