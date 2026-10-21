@@ -80,7 +80,7 @@ export default function LoginPage() {
           </h1>
           <p className="mt-4 text-white/80 leading-relaxed">
             A faster, fairer way to review employee emergency financial
-            assistance — so urgent needs are seen first.
+            assistance, so that urgent needs are seen first.
           </p>
         </div>
         <div className="relative text-sm text-white/60">
