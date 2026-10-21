@@ -7,6 +7,7 @@ public class WelfareRequest
     public string Category { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public string? Description { get; set; }
+    public string? ValidationNote { get; set; }
 
     //Model-input snapshot
     public decimal? Salary{ get; set; }
