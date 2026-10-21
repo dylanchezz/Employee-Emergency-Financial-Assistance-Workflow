@@ -59,6 +59,7 @@ CREATE TABLE welfare_requests (
     previous_requests          INTEGER,
     request_frequency          INTEGER,
     has_documents              INTEGER,
+    validation_note            TEXT,
 
     status         VARCHAR(30) NOT NULL DEFAULT 'Submitted'
                    CHECK (status IN (

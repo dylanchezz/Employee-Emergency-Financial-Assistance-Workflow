@@ -15,7 +15,8 @@ public static class RequestEndpoints
         group.MapPost("/", async (
             SubmitRequestDto dto,
             ClaimsPrincipal principal,
-            IWelfareRequestRepository requests) =>
+            IWelfareRequestRepository requests,
+            IValidationService validation) =>
         {
             //Identify submitter from token not request body
             var userIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
@@ -52,15 +53,21 @@ public static class RequestEndpoints
                 CurrentTier = 0,
             };
 
-            // --- Feature 3 (validation) and Feature 4 (model classification)
-            // --- will slot in here, between insert and response, in the next issues.
+            // Feature 3: rule-based validation. Sets status + note; blocks the model on Rejected/Returned.
+            var validationResult = await validation.ValidateAsync(request);
+            request.Status = validationResult.Status;
+            request.ValidationNote = validationResult.Note;
 
-            var newId =await requests.CreateAsync(request);
+            // --- Feature 4 (model classification) will slot in here:
+            // --- only when validationResult.Outcome == ValidationOutcome.Validated.
+
+            var newId = await requests.CreateAsync(request);
 
             return Results.Created($"/api/requests/{newId}", new
             {
                 requestId = newId,
                 status = request.Status,
+                note = request.ValidationNote,
                 previousRequests = request.PreviousRequests,
                 requestFrequency = request.RequestFrequency,
             });
