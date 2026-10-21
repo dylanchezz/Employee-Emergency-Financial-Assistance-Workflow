@@ -87,6 +87,7 @@ CREATE TABLE priority_predictions (
                    REFERENCES welfare_requests(request_id) ON DELETE CASCADE,
     priority_level VARCHAR(10) NOT NULL
                    CHECK (priority_level IN ('Low', 'Medium', 'High')),
+    explanation    JSONB,
     predicted_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

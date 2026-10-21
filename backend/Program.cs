@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using backend.Auth;
 using backend.Requests;
 using System.IdentityModel.Tokens.Jwt;
+using backend.M1;
 
 // Keep JWT claim names as-is (don't remap "sub" to the long .NET URI).
 JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
@@ -39,6 +40,17 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IWelfareRequestRepository, WelfareRequestRepository>();
 builder.Services.AddScoped<IValidationService, ValidationService>();
+builder.Services.AddScoped<IPriorityPredictionRepository, PriorityPredictionRepository>();
+
+//Typed HttpClient for FastAPI model service
+var mlBaseUrl = builder.Configuration["MlService:BaseUrl"]
+    ?? throw new InvalidOperationException("MlService:BaseUrl is missing from configuration.");
+
+builder.Services.AddHttpClient<IModelService, ModelService>(client =>
+{
+    client.BaseAddress = new Uri(mlBaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
 
 builder.Services.AddAuthentication("Bearer")
     .AddJwtBearer("Bearer", options =>
