@@ -3,6 +3,10 @@ import os
 import joblib
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use("Agg")   # no display needed; just save files
+import matplotlib.pyplot as plt
+from sklearn.metrics import ConfusionMatrixDisplay
 
 from sklearn.model_selection import train_test_split, StratifiedKFold, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
@@ -65,16 +69,50 @@ def main() -> None:
     print(f"Best CV F1 (macro): {grid.best_score_:.4f}")
 
     # 5. Evaluate on the held-out test set
+    # 5. Evaluate on the held-out test set
     y_pred = model.predict(X_test)
+    labels = sorted(y.unique())          # consistent class order everywhere
+
+    acc  = accuracy_score(y_test, y_pred)
+    prec = precision_score(y_test, y_pred, average="macro")
+    rec  = recall_score(y_test, y_pred, average="macro")
+    f1m  = f1_score(y_test, y_pred, average="macro")
+    report = classification_report(y_test, y_pred, labels=labels)
+    cm = confusion_matrix(y_test, y_pred, labels=labels)
+
     print("\n=== Held-out test evaluation ===")
-    print(f"Accuracy:          {accuracy_score(y_test, y_pred):.4f}")
-    print(f"Precision (macro): {precision_score(y_test, y_pred, average='macro'):.4f}")
-    print(f"Recall (macro):    {recall_score(y_test, y_pred, average='macro'):.4f}")
-    print(f"F1 (macro):        {f1_score(y_test, y_pred, average='macro'):.4f}")
+    print(f"Accuracy:          {acc:.4f}")
+    print(f"Precision (macro): {prec:.4f}")
+    print(f"Recall (macro):    {rec:.4f}")
+    print(f"F1 (macro):        {f1m:.4f}")
     print("\nPer-class report:")
-    print(classification_report(y_test, y_pred))
-    print("Confusion matrix (rows=true, cols=pred), labels sorted:")
-    print(confusion_matrix(y_test, y_pred, labels=sorted(y.unique())))
+    print(report)
+    print("Confusion matrix (rows=true, cols=pred):")
+    print(cm)
+
+    # 5b. Save the evaluation so it is not lost when the terminal scrolls
+    os.makedirs("evaluation", exist_ok=True)
+    with open(os.path.join("evaluation", "metrics.txt"), "w") as f:
+        f.write("Held-out test evaluation (held-out 20%, seed 42)\n")
+        f.write(f"Best params: {grid.best_params_}\n\n")
+        f.write(f"Accuracy:          {acc:.4f}\n")
+        f.write(f"Precision (macro): {prec:.4f}\n")
+        f.write(f"Recall (macro):    {rec:.4f}\n")
+        f.write(f"F1 (macro):        {f1m:.4f}\n\n")
+        f.write("Per-class report:\n")
+        f.write(report + "\n")
+        f.write("Confusion matrix (rows=true, cols=pred):\n")
+        f.write(f"labels: {labels}\n")
+        f.write(str(cm) + "\n")
+
+    # 5c. Save a labelled confusion-matrix image for the report/screenshot
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
+    disp.plot(cmap="Blues", values_format="d")
+    plt.title("Confusion Matrix — Priority Classification (held-out test)")
+    plt.tight_layout()
+    plt.savefig(os.path.join("evaluation", "confusion_matrix.png"), dpi=150)
+    plt.close()
+    print("\nSaved evaluation/metrics.txt and evaluation/confusion_matrix.png")
 
     # 6. Save the model in the dictionary format the FastAPI service expects
     os.makedirs(MODEL_DIR, exist_ok=True)
