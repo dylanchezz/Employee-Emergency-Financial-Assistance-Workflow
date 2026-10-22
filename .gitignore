@@ -38,6 +38,9 @@ ml-service/.mypy_cache/
 # Trained model artifacts — track intentionally via releases/LFS, not raw commits
 ml-service/models/*.joblib
 ml-service/models/*.pkl
+# Generated evaluation output — reproducible by running train.py (metrics + confusion
+# matrix image regenerate from the model + fixed seed), so not committed as artifacts
+ml-service/evaluation/
 
 # Generated / raw data — synthetic dataset generation should be reproducible from
 # the documented script + fixed seed, not committed as a large binary/CSV blob
