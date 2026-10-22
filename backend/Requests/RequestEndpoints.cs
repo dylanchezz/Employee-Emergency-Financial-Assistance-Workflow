@@ -57,10 +57,22 @@ public static class RequestEndpoints
                 CurrentTier = 0,
             };
 
-            // Feature 3: rule-based validation. Sets status + note; blocks the model on Rejected/Returned.
+            // Feature 3: rule-based validation.
             var validationResult = await validation.ValidateAsync(request);
-            request.Status = validationResult.Status;
             request.ValidationNote = validationResult.Note;
+
+            // On pass, the request enters the approval workflow at tier 1 ("In Review").
+            // Rejected/Returned keep their status and stay at tier 0.
+            if (validationResult.Outcome == ValidationOutcome.Validated)
+            {
+                request.Status = "In Review";
+                request.CurrentTier = 1;
+            }
+            else
+            {
+                request.Status = validationResult.Status;  // "Rejected" or "Returned"
+                request.CurrentTier = 0;
+            }
 
             // Store the request first so we have its id for the prediction.
             var newId = await requests.CreateAsync(request);
@@ -93,7 +105,7 @@ public static class RequestEndpoints
                     });
                 }
                 // If prediction is null (model service down/timed out), the request stays
-                // Validated but unclassified. Graceful degradation.
+                // In Review but unclassified. Graceful degradation.
             }
 
             return Results.Created($"/api/requests/{newId}", new
@@ -107,5 +119,136 @@ public static class RequestEndpoints
             });
         })
         .RequireAuthorization();
+
+        // The approver's queue: In-Review requests at their tier, priority-ordered.
+        group.MapGet("/queue", async (
+            ClaimsPrincipal principal,
+            IWelfareRequestRepository requests) =>
+        {
+            var role = principal.FindFirstValue(ClaimTypes.Role);
+            var tier = TierForRole(role);
+            if (tier is null)
+            {
+                // Not an approver role (e.g. Employee / Admin) — no queue.
+                return Results.Forbid();
+            }
+
+            var queue = await requests.GetQueueForTierAsync(tier.Value);
+            return Results.Ok(queue);
+        })
+        .RequireAuthorization();
+
+        // An approver acts on a request at their tier: approve / reject / return.
+        group.MapPost("/{id:int}/decision", async (
+            int id,
+            DecisionDto dto,
+            ClaimsPrincipal principal,
+            IWelfareRequestRepository requests,
+            IApprovalRepository approvals) =>
+        {
+            // Who is acting, and at what tier.
+            var approverIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (approverIdClaim is null || !int.TryParse(approverIdClaim, out var approverId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var role = principal.FindFirstValue(ClaimTypes.Role);
+            var approverTier = TierForRole(role);
+            if (approverTier is null)
+            {
+                return Results.Forbid();  // not an approver role
+            }
+
+            // The request must exist, be In Review, and be at this approver's tier.
+            var request = await requests.GetByIdAsync(id);
+            if (request is null)
+            {
+                return Results.NotFound(new { error = "Request not found." });
+            }
+            if (request.Status != "In Review" || request.CurrentTier != approverTier.Value)
+            {
+                return Results.BadRequest(new { error = "This request is not awaiting your decision." });
+            }
+
+            // Normalise the decision and enforce the reason rule.
+            var decision = dto.Decision?.Trim();
+            if (decision is not ("Approve" or "Reject" or "Return"))
+            {
+                return Results.BadRequest(new { error = "Decision must be Approve, Reject, or Return." });
+            }
+            if ((decision is "Reject" or "Return") && string.IsNullOrWhiteSpace(dto.Reason))
+            {
+                return Results.BadRequest(new { error = "A reason is required to reject or return a request." });
+            }
+
+            // Record the approval event (maps to the approvals.decision values).
+            var recordedDecision = decision switch
+            {
+                "Approve" => "Approved",
+                "Reject"  => "Rejected",
+                "Return"  => "Returned",
+                _ => decision
+            };
+            await approvals.CreateAsync(new Approval
+            {
+                RequestId = id,
+                ApproverId = approverId,
+                Tier = approverTier.Value,
+                Decision = recordedDecision,
+                Reason = dto.Reason,
+            });
+
+            // Route the request based on the decision.
+            string newStatus;
+            int newTier;
+            switch (decision)
+            {
+                case "Approve":
+                    if (approverTier.Value >= 4)
+                    {
+                        newStatus = "Approved";   // final tier (HR) approved
+                        newTier = 4;
+                    }
+                    else
+                    {
+                        newStatus = "In Review";  // advance to the next tier
+                        newTier = approverTier.Value + 1;
+                    }
+                    break;
+
+                case "Reject":
+                    newStatus = "Rejected";
+                    newTier = approverTier.Value;
+                    break;
+
+                default: // Return
+                    newStatus = "Returned";
+                    newTier = approverTier.Value;
+                    break;
+            }
+
+            await requests.UpdateStatusAndTierAsync(id, newStatus, newTier);
+
+            return Results.Ok(new
+            {
+                requestId = id,
+                decision = recordedDecision,
+                status = newStatus,
+                currentTier = newTier,
+            });
+        })
+        .RequireAuthorization();
     }
+
+    // Maps an approver role to its workflow tier (null for non-approver roles).
+    private static int? TierForRole(string? role) => role switch
+    {
+        "Department Supervisor" => 1,
+        "Welfare Officer"       => 2,
+        "Finance Officer"       => 3,
+        "HR Manager"            => 4,
+        _ => null,
+    };
 }
