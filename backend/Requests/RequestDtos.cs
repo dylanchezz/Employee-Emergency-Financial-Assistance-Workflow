@@ -9,3 +9,6 @@ public record SubmitRequestDto(
     int EmploymentDurationMonths,
     int HasDocuments
 );
+
+//An approver's decison on a request
+public record DecisionDto(string Decision, string? Reason);

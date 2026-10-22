@@ -1,5 +1,6 @@
 using backend.Models;
 using Dapper;
+using backend.Requests;
 
 namespace backend.Data;
 
@@ -11,6 +12,8 @@ public interface IWelfareRequestRepository
     Task<int> CountByUserSinceAsync(int userId, DateTime since);
     Task<bool> HasRecentSimilarAsync(int userId, string category, DateTime since);
     Task<int> CountNonRejectedByUserSinceAsync(int userId, DateTime since);
+    Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier);
+        Task UpdateStatusAndTierAsync(int requestId, string status, int currentTier);
 }
 
 public class WelfareRequestRepository: IWelfareRequestRepository
@@ -102,5 +105,47 @@ public class WelfareRequestRepository: IWelfareRequestRepository
         using var connection = _factory.CreateConnection();
         return await connection.ExecuteScalarAsync<int>(
             sql, new { UserId = userId, Since = since });
+    }
+    public async Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier)
+    {
+        const string sql = @"
+            SELECT r.request_id        AS RequestId,
+                   u.name              AS RequesterName,
+                   r.category          AS Category,
+                   r.amount            AS Amount,
+                   r.status            AS Status,
+                   r.current_tier      AS CurrentTier,
+                   p.priority_level    AS PriorityLevel,
+                   r.validation_note   AS ValidationNote,
+                   r.created_at        AS CreatedAt
+            FROM welfare_requests r
+            JOIN users u ON u.user_id = r.user_id
+            LEFT JOIN priority_predictions p ON p.request_id = r.request_id
+            WHERE r.status = 'In Review'
+              AND r.current_tier = @Tier
+            ORDER BY
+                CASE p.priority_level
+                    WHEN 'High'   THEN 1
+                    WHEN 'Medium' THEN 2
+                    WHEN 'Low'    THEN 3
+                    ELSE 4
+                END,
+                r.created_at ASC;";
+
+        using var connection = _factory.CreateConnection();
+        return await connection.QueryAsync<QueueItemDto>(sql, new { Tier = tier });
+    }
+        public async Task UpdateStatusAndTierAsync(int requestId, string status, int currentTier)
+    {
+        const string sql = @"
+            UPDATE welfare_requests
+            SET status = @Status,
+                current_tier = @CurrentTier,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE request_id = @RequestId;";
+
+        using var connection = _factory.CreateConnection();
+        await connection.ExecuteAsync(
+            sql, new { RequestId = requestId, Status = status, CurrentTier = currentTier });
     }
 }
