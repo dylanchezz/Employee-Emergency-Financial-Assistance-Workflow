@@ -137,6 +137,53 @@ public static class RequestEndpoints
             return Results.Ok(queue);
         })
         .RequireAuthorization();
+        
+        // Full detail for one request: fields + prediction + approval history.
+        group.MapGet("/{id:int}", async (
+            int id,
+            ClaimsPrincipal principal,
+            IWelfareRequestRepository requests,
+            IUserRepository users,
+            IPriorityPredictionRepository predictions,
+            IApprovalRepository approvals) =>
+        {
+            // Approvers (any tier) may view request detail.
+            var role = principal.FindFirstValue(ClaimTypes.Role);
+            if (TierForRole(role) is null)
+            {
+                return Results.Forbid();
+            }
+
+            var request = await requests.GetByIdAsync(id);
+            if (request is null)
+            {
+                return Results.NotFound(new { error = "Request not found." });
+            }
+
+            var requesterName = await users.GetNameByIdAsync(request.UserId) ?? "Unknown";
+            var prediction = await predictions.GetByRequestIdAsync(id);
+            var history = await approvals.GetHistoryForRequestAsync(id);
+
+            var detail = new RequestDetailDto
+            {
+                RequestId = request.RequestId,
+                RequesterName = requesterName,
+                Category = request.Category,
+                Amount = request.Amount,
+                Description = request.Description,
+                Status = request.Status,
+                CurrentTier = request.CurrentTier,
+                HasDocuments = request.HasDocuments,
+                ValidationNote = request.ValidationNote,
+                CreatedAt = request.CreatedAt,
+                PriorityLevel = prediction?.PriorityLevel,
+                Explanation = prediction?.Explanation,
+                Approvals = history.ToList(),
+            };
+
+            return Results.Ok(detail);
+        })
+        .RequireAuthorization();
 
         // An approver acts on a request at their tier: approve / reject / return.
         group.MapPost("/{id:int}/decision", async (

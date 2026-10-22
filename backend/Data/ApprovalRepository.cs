@@ -1,5 +1,6 @@
 using backend.Models;
 using Dapper;
+using backend.Requests;
 
 namespace backend.Data;
 
@@ -7,6 +8,7 @@ public interface IApprovalRepository
 {
     Task<int> CreateAsync(Approval approval);
     Task<IEnumerable<Approval>> GetByRequestIdAsync(int requestId);
+        Task<IEnumerable<ApprovalHistoryItem>> GetHistoryForRequestAsync(int requestId);
 }
 
 public class ApprovalRepository : IApprovalRepository
@@ -45,5 +47,21 @@ public class ApprovalRepository : IApprovalRepository
 
         using var connection = _factory.CreateConnection();
         return await connection.QueryAsync<Approval>(sql, new { RequestId = requestId });
+    }
+    public async Task<IEnumerable<ApprovalHistoryItem>> GetHistoryForRequestAsync(int requestId)
+    {
+        const string sql = @"
+            SELECT a.tier       AS Tier,
+                   u.name       AS ApproverName,
+                   a.decision   AS Decision,
+                   a.reason     AS Reason,
+                   a.decided_at AS DecidedAt
+            FROM approvals a
+            JOIN users u ON u.user_id = a.approver_id
+            WHERE a.request_id = @RequestId
+            ORDER BY a.decided_at ASC;";
+
+        using var connection = _factory.CreateConnection();
+        return await connection.QueryAsync<ApprovalHistoryItem>(sql, new { RequestId = requestId });
     }
 }

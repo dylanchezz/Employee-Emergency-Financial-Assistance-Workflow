@@ -13,16 +13,18 @@ public interface IWelfareRequestRepository
     Task<bool> HasRecentSimilarAsync(int userId, string category, DateTime since);
     Task<int> CountNonRejectedByUserSinceAsync(int userId, DateTime since);
     Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier);
-        Task UpdateStatusAndTierAsync(int requestId, string status, int currentTier);
+    Task UpdateStatusAndTierAsync(int requestId, string status, int currentTier);
 }
 
-public class WelfareRequestRepository: IWelfareRequestRepository
+public class WelfareRequestRepository : IWelfareRequestRepository
 {
     private readonly IDbConnectionFactory _factory;
+
     public WelfareRequestRepository(IDbConnectionFactory factory)
     {
         _factory = factory;
     }
+
     public async Task<int> CreateAsync(WelfareRequest request)
     {
         const string sql = @"
@@ -34,10 +36,11 @@ public class WelfareRequestRepository: IWelfareRequestRepository
                  @Salary, @EmploymentDurationMonths, @PreviousRequests,
                  @RequestFrequency, @HasDocuments, @Status, @CurrentTier, @ValidationNote)
             RETURNING request_id;";
-        
+
         using var connection = _factory.CreateConnection();
         return await connection.ExecuteScalarAsync<int>(sql, request);
     }
+
     public async Task<WelfareRequest?> GetByIdAsync(int requestId)
     {
         const string sql = @"
@@ -61,15 +64,16 @@ public class WelfareRequestRepository: IWelfareRequestRepository
 
         using var connection = _factory.CreateConnection();
         return await connection.QuerySingleOrDefaultAsync<WelfareRequest>(
-            sql, new { RequestId = requestId});
+            sql, new { RequestId = requestId });
     }
+
     public async Task<int> CountByUserAsync(int userId)
     {
         const string sql = "SELECT COUNT(*) FROM welfare_requests WHERE user_id = @UserId;";
         using var connection = _factory.CreateConnection();
-        return await connection.ExecuteScalarAsync<int>(sql, new { UserId = userId});
+        return await connection.ExecuteScalarAsync<int>(sql, new { UserId = userId });
     }
-    
+
     public async Task<int> CountByUserSinceAsync(int userId, DateTime since)
     {
         const string sql = @"
@@ -94,7 +98,8 @@ public class WelfareRequestRepository: IWelfareRequestRepository
             sql, new { UserId = userId, Category = category, Since = since });
         return count > 0;
     }
-       public async Task<int> CountNonRejectedByUserSinceAsync(int userId, DateTime since)
+
+    public async Task<int> CountNonRejectedByUserSinceAsync(int userId, DateTime since)
     {
         const string sql = @"
             SELECT COUNT(*) FROM welfare_requests
@@ -106,6 +111,7 @@ public class WelfareRequestRepository: IWelfareRequestRepository
         return await connection.ExecuteScalarAsync<int>(
             sql, new { UserId = userId, Since = since });
     }
+
     public async Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier)
     {
         const string sql = @"
@@ -135,7 +141,8 @@ public class WelfareRequestRepository: IWelfareRequestRepository
         using var connection = _factory.CreateConnection();
         return await connection.QueryAsync<QueueItemDto>(sql, new { Tier = tier });
     }
-        public async Task UpdateStatusAndTierAsync(int requestId, string status, int currentTier)
+
+    public async Task UpdateStatusAndTierAsync(int requestId, string status, int currentTier)
     {
         const string sql = @"
             UPDATE welfare_requests
