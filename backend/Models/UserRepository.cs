@@ -8,6 +8,7 @@ public interface IUserRepository
 {
     Task<User?> GetByEmailAsync(string email);
     Task<int> CreateAsync(User user);
+    Task<string?> GetNameByIdAsync(int userId);
 }
 
 public class UserRepository : IUserRepository
@@ -41,5 +42,11 @@ public class UserRepository : IUserRepository
 
         using var connection = _factory.CreateConnection();
         return await connection.ExecuteScalarAsync<int>(sql, user);
+    }
+        public async Task<string?> GetNameByIdAsync(int userId)
+    {
+        const string sql = "SELECT name FROM users WHERE user_id = @UserId;";
+        using var connection = _factory.CreateConnection();
+        return await connection.QuerySingleOrDefaultAsync<string>(sql, new { UserId = userId });
     }
 }
