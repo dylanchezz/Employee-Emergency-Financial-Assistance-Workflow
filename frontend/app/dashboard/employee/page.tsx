@@ -67,16 +67,16 @@ export default function EmployeeDashboard() {
   return (
     <main className="min-h-screen px-6 py-10">
       <div className="mx-auto w-full max-w-3xl">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
               Employee Dashboard
             </h1>
-            <p className="mt-1 text-ink-soft">Signed in as {name}</p>
+            <p className="mt-2 text-ink-soft">Signed in as {name}</p>
           </div>
           <button
             onClick={handleLogout}
-            className="text-sm text-ink-soft hover:text-ink transition"
+            className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas"
           >
             Sign out
           </button>

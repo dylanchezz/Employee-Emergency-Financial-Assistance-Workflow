@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense  } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -15,8 +16,16 @@ const ROLE_ROUTES: Record<string, string> = {
   "System Administrator": "/dashboard/admin",
 };
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (searchParams.get("signup") === "success") {
+      setNotice("Account created. Please sign in.");
+    }
+  }, [searchParams]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -95,6 +104,14 @@ export default function LoginPage() {
             Welcome back
           </h2>
           <p className="mt-1 text-ink-soft">Sign in to continue.</p>
+          {notice && (
+            <p
+              className="mt-4 rounded-lg border border-low/30 bg-low/10 px-3.5 py-2.5 text-sm text-low"
+              role="status"
+            >
+              {notice}
+            </p>
+          )}
 
           <div className="mt-8">
             <label htmlFor="email" className="block text-sm font-medium text-ink">
@@ -139,8 +156,22 @@ export default function LoginPage() {
           >
             {loading ? "Signing in…" : "Sign in"}
           </button>
+                    <p className="mt-6 text-sm text-ink-soft">
+            Don&apos;t have an account?{" "}
+            <Link href="/signup" className="font-medium text-kq-red hover:underline">
+              Create one
+            </Link>
+          </p>
+          
         </form>
       </section>
     </main>
+  );
+}
+  export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }
