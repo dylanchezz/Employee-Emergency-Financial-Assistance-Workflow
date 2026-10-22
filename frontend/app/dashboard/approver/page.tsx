@@ -23,11 +23,19 @@ const PRIORITY_STYLES: Record<string, string> = {
   Low: "bg-low text-white",
 };
 
+const STATUS_STYLES: Record<string, string> = {
+  "In Review": "bg-medium/15 text-medium",
+  Approved: "bg-low/15 text-low",
+  Rejected: "bg-kq-red/15 text-kq-red",
+  Returned: "bg-ink-soft/15 text-ink-soft",
+};
+
 export default function ApproverDashboard() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [decided, setDecided] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -52,6 +60,11 @@ export default function ApproverDashboard() {
         return;
       }
       setQueue(result.data);
+      
+      const decidedResult = await apiFetch<QueueItem[]>("/requests/my-decisions");
+      if (decidedResult.ok) {
+        setDecided(decidedResult.data);
+      }
     })();
   }, [router]);
 
@@ -142,6 +155,46 @@ export default function ApproverDashboard() {
               </tbody>
             </table>
           </div>
+        )}
+                {decided.length > 0 && (
+          <>
+            <h2 className="mt-10 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
+              Your past decisions
+            </h2>
+            <p className="text-sm text-ink-soft">
+              Requests you have acted on, with their current status.
+            </p>
+            <div className="mt-4 space-y-3">
+              {decided.map((item) => (
+                <button
+                  key={item.requestId}
+                  onClick={() => router.push(`/requests/${item.requestId}`)}
+                  className="flex w-full items-center justify-between rounded-2xl border border-line bg-surface p-4 text-left transition hover:border-kq-red/40"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-ink">#{item.requestId}</span>
+                    <span className="text-ink">{item.category}</span>
+                    {item.priorityLevel && (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                          PRIORITY_STYLES[item.priorityLevel] ?? "bg-ink-soft text-white"
+                        }`}
+                      >
+                        {item.priorityLevel}
+                      </span>
+                    )}
+                  </div>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      STATUS_STYLES[item.status] ?? "bg-ink-soft/15 text-ink-soft"
+                    }`}
+                  >
+                    {item.status}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </main>

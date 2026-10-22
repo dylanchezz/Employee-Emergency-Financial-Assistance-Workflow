@@ -4,6 +4,7 @@ using System.Text.Json;
 using backend.Data;
 using backend.Models;
 using backend.M1;
+using System.Text.RegularExpressions;
 
 namespace backend.Requests;
 
@@ -147,19 +148,24 @@ public static class RequestEndpoints
             IPriorityPredictionRepository predictions,
             IApprovalRepository approvals) =>
         {
-            // Approvers (any tier) may view request detail.
-            var role = principal.FindFirstValue(ClaimTypes.Role);
-            if (TierForRole(role) is null)
-            {
-                return Results.Forbid();
-            }
 
             var request = await requests.GetByIdAsync(id);
             if (request is null)
             {
-                return Results.NotFound(new { error = "Request not found." });
+                return Results.NotFound(new { error = "Request not found. "});
             }
-
+        
+            //An Approver may view any request while an employee only views their own.
+            var role = principal.FindFirstValue(ClaimTypes.Role);
+            var viewerIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            int.TryParse(viewerIdClaim, out var viewerId);
+            var isApprover = TierForRole(role) is not null;
+            var isOwner = request.UserId == viewerId;
+            if (!isApprover && !isOwner)
+            {
+                return Results.Forbid();
+            }
             var requesterName = await users.GetNameByIdAsync(request.UserId) ?? "Unknown";
             var prediction = await predictions.GetByRequestIdAsync(id);
             var history = await approvals.GetHistoryForRequestAsync(id);
@@ -180,8 +186,25 @@ public static class RequestEndpoints
                 Explanation = prediction?.Explanation,
                 Approvals = history.ToList(),
             };
-
             return Results.Ok(detail);
+        })
+        .RequireAuthorization();
+ 
+
+        // The logged-in employee's own requests (any status), newest first.
+        group.MapGet("/mine", async (
+            ClaimsPrincipal principal,
+            IWelfareRequestRepository requests) =>
+        {
+            var userIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userIdClaim is null || !int.TryParse(userIdClaim, out var userId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var mine = await requests.GetByUserAsync(userId);
+            return Results.Ok(mine);
         })
         .RequireAuthorization();
 
@@ -287,7 +310,32 @@ public static class RequestEndpoints
             });
         })
         .RequireAuthorization();
+
+                // Requests this approver has personally decided on (any current status).
+        group.MapGet("/my-decisions", async (
+            ClaimsPrincipal principal,
+            IApprovalRepository approvals) =>
+        {
+            var role = principal.FindFirstValue(ClaimTypes.Role);
+            if (TierForRole(role) is null)
+            {
+                return Results.Forbid();  // approvers only
+            }
+
+            var idClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (idClaim is null || !int.TryParse(idClaim, out var approverId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var decided = await approvals.GetRequestsDecidedByAsync(approverId);
+            return Results.Ok(decided);
+        })
+        .RequireAuthorization();
+        
     }
+
 
     // Maps an approver role to its workflow tier (null for non-approver roles).
     private static int? TierForRole(string? role) => role switch

@@ -14,6 +14,7 @@ public interface IWelfareRequestRepository
     Task<int> CountNonRejectedByUserSinceAsync(int userId, DateTime since);
     Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier);
     Task UpdateStatusAndTierAsync(int requestId, string status, int currentTier);
+    Task<IEnumerable<QueueItemDto>> GetByUserAsync(int userId);
 }
 
 public class WelfareRequestRepository : IWelfareRequestRepository
@@ -154,5 +155,26 @@ public class WelfareRequestRepository : IWelfareRequestRepository
         using var connection = _factory.CreateConnection();
         await connection.ExecuteAsync(
             sql, new { RequestId = requestId, Status = status, CurrentTier = currentTier });
+    }
+    public async Task<IEnumerable<QueueItemDto>> GetByUserAsync(int userId)
+    {
+                const string sql = @"
+            SELECT r.request_id        AS RequestId,
+                   u.name              AS RequesterName,
+                   r.category          AS Category,
+                   r.amount            AS Amount,
+                   r.status            AS Status,
+                   r.current_tier      AS CurrentTier,
+                   p.priority_level    AS PriorityLevel,
+                   r.validation_note   AS ValidationNote,
+                   r.created_at        AS CreatedAt
+            FROM welfare_requests r
+            JOIN users u ON u.user_id = r.user_id
+            LEFT JOIN priority_predictions p ON p.request_id = r.request_id
+            WHERE r.user_id = @UserId
+            ORDER BY r.created_at DESC;";
+
+        using var connection = _factory.CreateConnection();
+        return await connection.QueryAsync<QueueItemDto>(sql, new { UserId = userId});
     }
 }

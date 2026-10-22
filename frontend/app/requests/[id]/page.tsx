@@ -136,10 +136,14 @@ export default function RequestDetailPage() {
     <main className="min-h-screen px-6 py-10">
       <div className="mx-auto w-full max-w-2xl">
         <button
-          onClick={() => router.push("/dashboard/approver")}
-          className="text-sm text-ink-soft hover:text-ink transition"
-        >
-          ← Back to queue
+          onClick={() =>
+            router.push(
+              role && roleTier[role] ? "/dashboard/approver" : "/dashboard/employee"
+            )
+          }
+          className = "text-sm text-ink-soft hover:text-ink transition"
+          >
+            ← Back to dashboard
         </button>
 
         {loading && <p className="mt-6 text-ink-soft">Loading…</p>}
