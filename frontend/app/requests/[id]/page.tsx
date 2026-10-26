@@ -79,6 +79,7 @@ export default function RequestDetailPage() {
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [docError, setDocError] = useState("");
 
   async function load() {
     const result = await apiFetch<RequestDetail>(`/requests/${id}`);
@@ -124,6 +125,35 @@ export default function RequestDetailPage() {
     setMessage(`Decision recorded: ${result.data.status}.`);
     setReason("");
     load(); // refresh the detail (status/history will have changed)
+  }
+
+  // The document endpoint is JWT-protected, so we can't use a plain <a href> (a browser
+  // navigation won't send the token). Fetch it with the auth header, turn the response
+  // into a blob URL, and open that in a new tab.
+  async function viewDocument() {
+    setDocError("");
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/requests/${id}/document`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      );
+      if (!res.ok) {
+        setDocError(
+          res.status === 404
+            ? "No document is attached to this request."
+            : "Could not open the document."
+        );
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      // Release the object URL shortly after opening.
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch {
+      setDocError("Could not reach the server to open the document.");
+    }
   }
 
   const factors: ShapFactor[] = detail?.explanation
@@ -195,7 +225,20 @@ export default function RequestDetailPage() {
               <Fact label="Amount (KES)" value={detail.amount.toLocaleString()} />
               <Fact label="Status" value={detail.status} />
               <Fact label="Current tier" value={String(detail.currentTier)} />
-              <Fact label="Documents" value={detail.hasDocuments ? "Provided" : "None"} />
+               <div>
+                <p className="text-ink-soft">Documents</p>
+                {detail.hasDocuments ? (
+                  <button
+                    onClick={viewDocument}
+                    className="mt-0.5 text-kq-red hover:underline"
+                  >
+                    View document
+                  </button>
+                ) : (
+                  <p className="mt-0.5 text-ink">None</p>
+                )}
+                {docError && <p className="mt-1 text-xs text-kq-red">{docError}</p>}
+              </div>
               {detail.description && (
                 <div className="col-span-2">
                   <p className="text-ink-soft">Description</p>

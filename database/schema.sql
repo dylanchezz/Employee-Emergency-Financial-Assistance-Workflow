@@ -95,13 +95,17 @@ CREATE TABLE priority_predictions (
 -- documents
 -- Supporting documents uploaded with a request (metadata + file path).
 
-CREATE TABLE documents (
-    document_id    SERIAL PRIMARY KEY,
-    request_id     INTEGER NOT NULL
-                   REFERENCES welfare_requests(request_id) ON DELETE CASCADE,
-    file_path      VARCHAR(500) NOT NULL,
-    doc_type       VARCHAR(100),
-    uploaded_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE public.documents (
+	document_id serial4 NOT NULL,
+	request_id int4 NOT NULL,
+	file_path varchar(500) NULL,
+	doc_type varchar(100) NULL,
+	uploaded_at timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	file_bytes bytea NULL,
+	file_name varchar(255) NULL,
+	content_type varchar(100) NULL,
+	CONSTRAINT documents_pkey PRIMARY KEY (document_id),
+	CONSTRAINT documents_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.welfare_requests(request_id) ON DELETE CASCADE
 );
 
 
