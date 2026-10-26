@@ -36,6 +36,7 @@ export default function NewRequestPage() {
   const [salary, setSalary] = useState("");
   const [employmentMonths, setEmploymentMonths] = useState("");
   const [hasDocuments, setHasDocuments] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
     // True while the description still holds an unedited template (so switching
   // category may replace it). Flips to false the moment the user edits the text.
   const [descriptionIsTemplate, setDescriptionIsTemplate] = useState(false);
@@ -89,17 +90,36 @@ export default function NewRequestPage() {
       return;
     }
 
+    // If a file was chosen, pre-check type and size (convenience — the server
+    // re-validates by the file's real signature).
+    if (file) {
+      const allowed = ["application/pdf", "image/jpeg", "image/png"];
+      if (!allowed.includes(file.type)) {
+        setError("Only PDF, JPEG, or PNG files are allowed.");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        setError("File must be 5 MB or smaller.");
+        return;
+      }
+    }
+
+    // Build multipart form data: the request fields plus the optional file.
+    const formData = new FormData();
+    formData.append("category", category);
+    formData.append("amount", String(Number(amount)));
+    formData.append("description", description || "");
+    formData.append("salary", String(Number(salary)));
+    formData.append("employmentDurationMonths", String(Number(employmentMonths)));
+    formData.append("hasDocuments", hasDocuments ? "1" : "0");
+    if (file) {
+      formData.append("document", file);
+    }
+
     setLoading(true);
     const result = await apiFetch<{ requestId: number }>("/requests", {
       method: "POST",
-      body: {
-        category,
-        amount: Number(amount),
-        description: description || null,
-        salary: Number(salary),
-        employmentDurationMonths: Number(employmentMonths),
-        hasDocuments: hasDocuments ? 1 : 0,
-      },
+      body: formData,
     });
     setLoading(false);
 
@@ -121,6 +141,7 @@ export default function NewRequestPage() {
     setSalary("");
     setEmploymentMonths("");
     setHasDocuments(false);
+    setFile(null);
   }
 
   const fieldClass =
@@ -256,6 +277,25 @@ export default function NewRequestPage() {
             />
             I have supporting documents to provide
           </label>
+          {hasDocuments && (
+            <div className="mt-3">
+              <label htmlFor="document" className="block text-sm font-medium text-ink">
+                Attach a document <span className="text-ink-soft">(PDF, JPEG or PNG, max 5 MB)</span>
+              </label>
+              <input
+                id="document"
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="mt-1.5 block w-full text-sm text-ink file:mr-4 file:rounded-lg file:border-0 file:bg-kq-red file:px-4 file:py-2 file:text-white file:transition hover:file:bg-kq-red-deep"
+              />
+              {file && (
+                <p className="mt-1.5 text-xs text-ink-soft">
+                  Selected: {file.name} ({(file.size / 1024).toFixed(0)} KB)
+                </p>
+              )}
+            </div>
+          )}
 
           {error && (
             <p className="mt-5 text-sm text-kq-red" role="alert">

@@ -14,16 +14,18 @@ public static class RequestEndpoints
     {
         var group = app.MapGroup("/api/requests");
 
-        //Any authenticated user can submit a request
+        // Any authenticated user can submit a request. Accepts multipart form data so an
+        // optional supporting document can be uploaded in the same step.
         group.MapPost("/", async (
-            SubmitRequestDto dto,
+            HttpRequest httpRequest,
             ClaimsPrincipal principal,
             IWelfareRequestRepository requests,
             IValidationService validation,
             IModelService modelService,
-            IPriorityPredictionRepository predictions) =>
+            IPriorityPredictionRepository predictions,
+            IDocumentRepository documents) =>
         {
-            //Identify submitter from token not request body
+            // Identify submitter from the token, not the request body.
             var userIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
                 ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
 
@@ -32,13 +34,54 @@ public static class RequestEndpoints
                 return Results.Unauthorized();
             }
 
+            // Read the fields from the multipart form (instead of a JSON DTO).
+            if (!httpRequest.HasFormContentType)
+            {
+                return Results.BadRequest(new { error = "Expected multipart form data." });
+            }
+            var form = await httpRequest.ReadFormAsync();
+
+            var category = form["category"].ToString();
+            var description = form["description"].ToString();
+            decimal.TryParse(form["amount"], out var amount);
+            decimal.TryParse(form["salary"], out var salaryVal);
+            int.TryParse(form["employmentDurationMonths"], out var employmentMonths);
+            int.TryParse(form["hasDocuments"], out var hasDocumentsFlag);
+
             // Basic validation of the submitted values.
-            if (string.IsNullOrWhiteSpace(dto.Category) || dto.Amount <= 0)
+            if (string.IsNullOrWhiteSpace(category) || amount <= 0)
             {
                 return Results.BadRequest(new { error = "Category and a positive amount are required." });
             }
 
-            //System derived history fields
+            // If a file was attached, read and validate it BEFORE creating anything,
+            // so a bad file is rejected cleanly rather than leaving a half-saved request.
+            var file = form.Files.GetFile("document");
+            byte[]? fileBytes = null;
+            string? fileContentType = null;
+            string? fileName = null;
+
+            if (file is not null && file.Length > 0)
+            {
+                const long maxBytes = 5 * 1024 * 1024; // 5 MB cap
+                if (file.Length > maxBytes)
+                {
+                    return Results.BadRequest(new { error = "File must be 5 MB or smaller." });
+                }
+
+                using var ms = new MemoryStream();
+                await file.CopyToAsync(ms);
+                fileBytes = ms.ToArray();
+
+                fileContentType = SniffAllowedContentType(fileBytes);
+                if (fileContentType is null)
+                {
+                    return Results.BadRequest(new { error = "Only PDF, JPEG, or PNG files are allowed." });
+                }
+                fileName = Path.GetFileName(file.FileName);
+            }
+
+            // System-derived history fields.
             var previousRequests = await requests.CountByUserAsync(userId);
             var oneYearAgo = DateTime.UtcNow.AddYears(-1);
             var requestFrequency = await requests.CountByUserSinceAsync(userId, oneYearAgo);
@@ -46,14 +89,16 @@ public static class RequestEndpoints
             var request = new WelfareRequest
             {
                 UserId = userId,
-                Category = dto.Category,
-                Amount = dto.Amount,
-                Description = dto.Description,
-                Salary = dto.Salary,
-                EmploymentDurationMonths = dto.EmploymentDurationMonths,
+                Category = category,
+                Amount = amount,
+                Description = string.IsNullOrWhiteSpace(description) ? null : description,
+                Salary = salaryVal,
+                EmploymentDurationMonths = employmentMonths,
                 PreviousRequests = previousRequests,
                 RequestFrequency = requestFrequency,
-                HasDocuments = dto.HasDocuments,
+                // A real uploaded file is the source of truth for has-documents; fall back
+                // to the form's checkbox if no file was attached.
+                HasDocuments = fileBytes is not null ? 1 : hasDocumentsFlag,
                 Status = "Submitted",
                 CurrentTier = 0,
             };
@@ -62,8 +107,6 @@ public static class RequestEndpoints
             var validationResult = await validation.ValidateAsync(request);
             request.ValidationNote = validationResult.Note;
 
-            // On pass, the request enters the approval workflow at tier 1 ("In Review").
-            // Rejected/Returned keep their status and stay at tier 0.
             if (validationResult.Outcome == ValidationOutcome.Validated)
             {
                 request.Status = "In Review";
@@ -75,8 +118,28 @@ public static class RequestEndpoints
                 request.CurrentTier = 0;
             }
 
-            // Store the request first so we have its id for the prediction.
+            // Store the request first so we have its id (for the prediction and the document).
             var newId = await requests.CreateAsync(request);
+
+            // If a valid file was attached, store it against the new request. Best-effort:
+            // a document write failure must not lose an otherwise valid request.
+            if (fileBytes is not null)
+            {
+                try
+                {
+                    await documents.CreateAsync(new Document
+                    {
+                        RequestId = newId,
+                        FileName = fileName ?? "document",
+                        ContentType = fileContentType!,
+                        FileBytes = fileBytes,
+                    });
+                }
+                catch
+                {
+                    // Swallow — the request stands; the document simply wasn't saved.
+                }
+            }
 
             // Feature 4: classify ONLY validated requests. Rejected/Returned skip the model.
             string? priority = null;
@@ -105,8 +168,6 @@ public static class RequestEndpoints
                         Explanation = JsonSerializer.Serialize(prediction.Explanation),
                     });
                 }
-                // If prediction is null (model service down/timed out), the request stays
-                // In Review but unclassified. Graceful degradation.
             }
 
             return Results.Created($"/api/requests/{newId}", new
@@ -119,7 +180,8 @@ public static class RequestEndpoints
                 requestFrequency = request.RequestFrequency,
             });
         })
-        .RequireAuthorization();
+        .RequireAuthorization()
+        .DisableAntiforgery();
 
         // The approver's queue: In-Review requests at their tier, priority-ordered.
         group.MapGet("/queue", async (
@@ -187,6 +249,44 @@ public static class RequestEndpoints
                 Approvals = history.ToList(),
             };
             return Results.Ok(detail);
+        })
+        .RequireAuthorization();
+
+                // Download the supporting document for a request. Same access rule as the detail
+        // endpoint: an approver may view any request's document; an employee only their own.
+        group.MapGet("/{id:int}/document", async (
+            int id,
+            ClaimsPrincipal principal,
+            IWelfareRequestRepository requests,
+            IDocumentRepository documents) =>
+        {
+            var request = await requests.GetByIdAsync(id);
+            if (request is null)
+            {
+                return Results.NotFound(new { error = "Request not found." });
+            }
+
+            // Authorise: approver (any) or the owning employee (their own only).
+            var role = principal.FindFirstValue(ClaimTypes.Role);
+            var viewerIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            int.TryParse(viewerIdClaim, out var viewerId);
+            var isApprover = TierForRole(role) is not null;
+            var isOwner = request.UserId == viewerId;
+            if (!isApprover && !isOwner)
+            {
+                return Results.Forbid();
+            }
+
+            var doc = await documents.GetByRequestIdAsync(id);
+            if (doc is null || doc.FileBytes.Length == 0)
+            {
+                return Results.NotFound(new { error = "No document attached to this request." });
+            }
+
+            // Stream the bytes back with the right content type. "inline" lets the browser
+            // display a PDF/image in a tab rather than forcing a download.
+            return Results.File(doc.FileBytes, doc.ContentType, doc.FileName, enableRangeProcessing: false);
         })
         .RequireAuthorization();
  
@@ -346,4 +446,25 @@ public static class RequestEndpoints
         "HR Manager"            => 4,
         _ => null,
     };
+    // Validate an uploaded file by its real content (magic bytes), not its extension.
+    // Returns a normalised content type ("application/pdf" | "image/jpeg" | "image/png")
+    // or null if the file is not an allowed type. Allowed: PDF, JPEG, PNG.
+    private static string? SniffAllowedContentType(byte[] bytes)
+    {
+        if (bytes.Length < 4) return null;
+
+        // PDF: "%PDF"
+        if (bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46)
+            return "application/pdf";
+
+        // JPEG: FF D8 FF
+        if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
+            return "image/jpeg";
+
+        // PNG: 89 50 4E 47
+        if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
+            return "image/png";
+
+        return null;
+    }
 }
