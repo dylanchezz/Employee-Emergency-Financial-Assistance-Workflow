@@ -49,6 +49,24 @@ function readableFeature(feature: string): string {
   };
   return map[feature] ?? feature;
 }
+// Build a one-sentence, plain-language summary from the top contributing factors
+// that PUSHED THE PRIORITY UP — the "why" an approver reads before the detail bars.
+function explanationSentence(
+  priority: string | null,
+  factors: ShapFactor[]
+): string | null {
+  if (!priority || factors.length === 0) return null;
+  const raisers = factors
+    .filter((f) => f.impact > 0)
+    .sort((a, b) => b.impact - a.impact)
+    .map((f) => readableFeature(f.feature).toLowerCase());
+
+  if (raisers.length === 0) {
+    return `This request was rated ${priority} priority based on its overall profile.`;
+  }
+  const top = raisers.slice(0, 2).join(" and ");
+  return `This request was rated ${priority} priority mainly because of its ${top}.`;
+}
 
 export default function RequestDetailPage() {
   const router = useRouter();
@@ -118,6 +136,7 @@ export default function RequestDetailPage() {
       })()
     : [];
   const maxImpact = factors.reduce((m, f) => Math.max(m, Math.abs(f.impact)), 0) || 1;
+  const summary = explanationSentence(detail?.priorityLevel ?? null, factors);
 
   // Only an approver at this request's tier, on an In-Review request, can decide.
   const role = typeof window !== "undefined" ? localStorage.getItem("role") : null;
@@ -191,37 +210,52 @@ export default function RequestDetailPage() {
               )}
             </div>
 
-            {/* SHAP explanation */}
+                      {/* SHAP explanation — plain-language summary first, then the detail bars. */}
             <h2 className="mt-8 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
               Why this priority?
             </h2>
-            <p className="text-sm text-ink-soft">
-              The main factors behind the model&apos;s prediction.
-            </p>
+
+            {summary && (
+              <p className="mt-2 rounded-xl border border-line bg-canvas p-4 text-ink">
+                {summary}
+              </p>
+            )}
+
             {factors.length > 0 ? (
-              <div className="mt-4 space-y-3 rounded-2xl border border-line bg-surface p-6">
-                {factors.map((f) => {
-                  const raises = f.impact >= 0;
-                  const width = `${(Math.abs(f.impact) / maxImpact) * 100}%`;
-                  return (
-                    <div key={f.feature}>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-ink">
-                          {readableFeature(f.feature)}
-                        </span>
-                        <span className={raises ? "text-high" : "text-low"}>
-                          {raises ? "↑ raises" : "↓ lowers"}
-                        </span>
+              <div className="mt-4 rounded-2xl border border-line bg-surface p-6">
+                <div className="flex items-center justify-between text-xs text-ink-soft">
+                  <span>Contributing factors</span>
+                  <span>
+                    <span className="text-high">↑ raises</span> ·{" "}
+                    <span className="text-low">↓ lowers</span> priority
+                  </span>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {factors.map((f) => {
+                    const raises = f.impact >= 0;
+                    const width = `${(Math.abs(f.impact) / maxImpact) * 100}%`;
+                    return (
+                      <div key={f.feature}>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-ink">{readableFeature(f.feature)}</span>
+                          <span className={raises ? "text-high" : "text-low"}>
+                            {raises ? "↑ raises" : "↓ lowers"}
+                          </span>
+                        </div>
+                        <div className="mt-1 h-2 w-full rounded-full bg-canvas">
+                          <div
+                            className={`h-2 rounded-full ${raises ? "bg-high" : "bg-low"}`}
+                            style={{ width }}
+                          />
+                        </div>
                       </div>
-                      <div className="mt-1 h-2 w-full rounded-full bg-canvas">
-                        <div
-                          className={`h-2 rounded-full ${raises ? "bg-high" : "bg-low"}`}
-                          style={{ width }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+                <p className="mt-4 border-t border-line pt-3 text-xs text-ink-soft">
+                  These are the factors that most influenced the model&apos;s ranking —
+                  a transparency aid, not a confidence score. The final decision is the approver&apos;s.
+                </p>
               </div>
             ) : (
               <p className="mt-4 text-sm text-ink-soft">

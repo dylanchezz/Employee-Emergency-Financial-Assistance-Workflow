@@ -23,6 +23,13 @@ const PRIORITY_STYLES: Record<string, string> = {
   Low: "bg-low text-white",
 };
 
+// Priority → the coloured left bar that makes urgency visible down the list.
+const PRIORITY_BAR: Record<string, string> = {
+  High: "border-l-high",
+  Medium: "border-l-medium",
+  Low: "border-l-low",
+};
+
 const STATUS_STYLES: Record<string, string> = {
   "In Review": "bg-medium/15 text-medium",
   Approved: "bg-low/15 text-low",
@@ -60,7 +67,7 @@ export default function ApproverDashboard() {
         return;
       }
       setQueue(result.data);
-      
+
       const decidedResult = await apiFetch<QueueItem[]>("/requests/my-decisions");
       if (decidedResult.ok) {
         setDecided(decidedResult.data);
@@ -75,10 +82,17 @@ export default function ApproverDashboard() {
     router.replace("/");
   }
 
+  // Counts by priority, for the summary strip.
+  const counts = {
+    High: queue.filter((q) => q.priorityLevel === "High").length,
+    Medium: queue.filter((q) => q.priorityLevel === "Medium").length,
+    Low: queue.filter((q) => q.priorityLevel === "Low").length,
+  };
+
   return (
     <main className="min-h-screen px-6 py-10">
       <div className="mx-auto w-full max-w-4xl">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
               Approver Dashboard
@@ -89,43 +103,76 @@ export default function ApproverDashboard() {
           </div>
           <button
             onClick={handleLogout}
-            className="text-sm text-ink-soft hover:text-ink transition"
+            className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas"
           >
             Sign out
           </button>
         </div>
 
-        <h2 className="mt-8 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
+        {/* Summary strip — how much is waiting, by urgency. */}
+        {!loading && !error && queue.length > 0 && (
+          <div className="mt-8 grid grid-cols-3 gap-4">
+            <div className="rounded-xl border border-line bg-surface p-4">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-high" />
+                <span className="text-sm text-ink-soft">High priority</span>
+              </div>
+              <p className="mt-2 font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
+                {counts.High}
+              </p>
+            </div>
+            <div className="rounded-xl border border-line bg-surface p-4">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-medium" />
+                <span className="text-sm text-ink-soft">Medium</span>
+              </div>
+              <p className="mt-2 font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
+                {counts.Medium}
+              </p>
+            </div>
+            <div className="rounded-xl border border-line bg-surface p-4">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-low" />
+                <span className="text-sm text-ink-soft">Low</span>
+              </div>
+              <p className="mt-2 font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
+                {counts.Low}
+              </p>
+            </div>
+          </div>
+        )}
+
+        <h2 className="mt-10 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
           Requests awaiting your review
         </h2>
-        <p className="text-sm text-ink-soft">Ordered by predicted priority.</p>
+        <p className="text-sm text-ink-soft">Ordered by predicted priority — most urgent first.</p>
 
         {loading && <p className="mt-6 text-ink-soft">Loading…</p>}
         {error && <p className="mt-6 text-sm text-kq-red">{error}</p>}
 
         {!loading && !error && queue.length === 0 && (
-          <div className="mt-6 rounded-2xl border border-line bg-surface p-8 text-ink-soft">
-            Your queue is empty.
+          <div className="mt-6 rounded-2xl border border-line bg-surface p-10 text-center">
+            <p className="font-medium text-ink">You&apos;re all caught up.</p>
+            <p className="mt-1 text-sm text-ink-soft">
+              No requests are awaiting your review right now.
+            </p>
           </div>
         )}
 
         {queue.length > 0 && (
-          <div className="mt-6 overflow-hidden rounded-2xl border border-line bg-surface">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line text-left text-ink-soft">
-                  <th className="px-4 py-3 font-medium">Priority</th>
-                  <th className="px-4 py-3 font-medium">Request</th>
-                  <th className="px-4 py-3 font-medium">Employee</th>
-                  <th className="px-4 py-3 font-medium">Category</th>
-                  <th className="px-4 py-3 font-medium">Amount (KES)</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {queue.map((item) => (
-                  <tr key={item.requestId} className="border-b border-line last:border-0">
-                    <td className="px-4 py-3">
+          <div className="mt-6 space-y-3">
+            {queue.map((item) => (
+              <div
+                key={item.requestId}
+                className={`rounded-2xl border border-line border-l-4 bg-surface p-5 transition hover:border-kq-red/40 ${
+                  item.priorityLevel
+                    ? PRIORITY_BAR[item.priorityLevel] ?? "border-l-line"
+                    : "border-l-line"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
                       <span
                         className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                           item.priorityLevel
@@ -135,28 +182,31 @@ export default function ApproverDashboard() {
                       >
                         {item.priorityLevel ?? "Unclassified"}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-ink">#{item.requestId}</td>
-                    <td className="px-4 py-3 text-ink">{item.requesterName}</td>
-                    <td className="px-4 py-3 text-ink">{item.category}</td>
-                    <td className="px-4 py-3 text-ink">
-                      {item.amount.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => router.push(`/requests/${item.requestId}`)}
-                        className="rounded-lg border border-kq-red px-3 py-1.5 text-sm font-medium text-kq-red transition hover:bg-kq-red hover:text-white"
-                      >
-                        Review
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <span className="font-medium text-ink">#{item.requestId}</span>
+                      <span className="text-ink">{item.category}</span>
+                    </div>
+                    <p className="mt-1.5 text-sm text-ink-soft">
+                      {item.requesterName} · KES {item.amount.toLocaleString()}
+                    </p>
+                    {item.validationNote && (
+                      <p className="mt-2 inline-block rounded-md bg-medium/10 px-2 py-1 text-xs text-medium">
+                        ⚑ {item.validationNote}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => router.push(`/requests/${item.requestId}`)}
+                    className="shrink-0 rounded-lg border border-kq-red px-4 py-2 text-sm font-medium text-kq-red transition hover:bg-kq-red hover:text-white"
+                  >
+                    Review
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
-                {decided.length > 0 && (
+
+        {decided.length > 0 && (
           <>
             <h2 className="mt-10 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
               Your past decisions
