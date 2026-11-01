@@ -183,7 +183,7 @@ public static class RequestEndpoints
         .RequireAuthorization()
         .DisableAntiforgery();
 
-        // The approver's queue: In-Review requests at their tier, priority-ordered.
+        // The approver's queue: unclaimed (or self-held) requests at their tier, priority-ordered.
         group.MapGet("/queue", async (
             ClaimsPrincipal principal,
             IWelfareRequestRepository requests) =>
@@ -196,7 +196,14 @@ public static class RequestEndpoints
                 return Results.Forbid();
             }
 
-            var queue = await requests.GetQueueForTierAsync(tier.Value);
+            var idClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (idClaim is null || !int.TryParse(idClaim, out var approverId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var queue = await requests.GetQueueForTierAsync(tier.Value, approverId);
             return Results.Ok(queue);
         })
         .RequireAuthorization();
@@ -244,8 +251,10 @@ public static class RequestEndpoints
                 HasDocuments = request.HasDocuments,
                 ValidationNote = request.ValidationNote,
                 CreatedAt = request.CreatedAt,
+                DeferReason = request.DeferReason,
                 PriorityLevel = prediction?.PriorityLevel,
                 Explanation = prediction?.Explanation,
+                ClaimedBy = request.ClaimedBy,
                 Approvals = history.ToList(),
             };
             return Results.Ok(detail);
@@ -308,13 +317,106 @@ public static class RequestEndpoints
         })
         .RequireAuthorization();
 
+                // An approver claims a request from their tier's shared queue, locking it to
+        // themselves. Enforces the per-approver claim cap.
+        group.MapPost("/{id:int}/claim", async (
+            int id,
+            ClaimsPrincipal principal,
+            IWelfareRequestRepository requests,
+            IClaimRepository claims) =>
+        {
+            var role = principal.FindFirstValue(ClaimTypes.Role);
+            var approverTier = TierForRole(role);
+            if (approverTier is null)
+            {
+                return Results.Forbid();  // not an approver role
+            }
+
+            var idClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (idClaim is null || !int.TryParse(idClaim, out var approverId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var request = await requests.GetByIdAsync(id);
+            if (request is null)
+            {
+                return Results.NotFound(new { error = "Request not found." });
+            }
+
+            // Claimable when it's at this approver's tier AND either In Review, or
+            // Deferred at the Finance tier (so Finance can re-claim a deferred request).
+            var claimable =
+                request.CurrentTier == approverTier.Value &&
+                (request.Status == "In Review" ||
+                 (request.Status == "Deferred" && approverTier.Value == 3));
+            if (!claimable)
+            {
+                return Results.BadRequest(new { error = "This request is not available at your tier." });
+            }
+
+            // Must be unclaimed (or already held by this same approver — treat as a no-op success).
+            if (request.ClaimedBy is not null && request.ClaimedBy != approverId)
+            {
+                return Results.BadRequest(new { error = "This request is already claimed by another officer." });
+            }
+
+            // Enforce the per-approver claim cap.
+            var priorClaims = await claims.CountClaimsByApproverAsync(id, approverId);
+            if (priorClaims >= ClaimPolicy.MaxClaimsPerApprover)
+            {
+                return Results.BadRequest(new
+                {
+                    error = $"You have already claimed this request {ClaimPolicy.MaxClaimsPerApprover} times and can no longer claim it. Another officer at your tier can take it."
+                });
+            }
+
+            await claims.ClaimAsync(id, approverId);
+            return Results.Ok(new { requestId = id, claimedBy = approverId });
+        })
+        .RequireAuthorization();
+
+                // The holder releases a request back to the shared queue. Note: releasing does
+        // NOT reset the claim count — that's what makes the cap meaningful.
+        group.MapPost("/{id:int}/release", async (
+            int id,
+            ClaimsPrincipal principal,
+            IWelfareRequestRepository requests,
+            IClaimRepository claims) =>
+        {
+            var idClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (idClaim is null || !int.TryParse(idClaim, out var approverId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var request = await requests.GetByIdAsync(id);
+            if (request is null)
+            {
+                return Results.NotFound(new { error = "Request not found." });
+            }
+
+            // Only the current holder may release it.
+            if (request.ClaimedBy != approverId)
+            {
+                return Results.BadRequest(new { error = "You do not currently hold this request." });
+            }
+
+            await claims.ReleaseAsync(id, approverId);
+            return Results.Ok(new { requestId = id, released = true });
+        })
+        .RequireAuthorization();
+
         // An approver acts on a request at their tier: approve / reject / return.
         group.MapPost("/{id:int}/decision", async (
             int id,
             DecisionDto dto,
             ClaimsPrincipal principal,
             IWelfareRequestRepository requests,
-            IApprovalRepository approvals) =>
+            IApprovalRepository approvals,
+            IClaimRepository claims) =>
         {
             // Who is acting, and at what tier.
             var approverIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
@@ -337,38 +439,59 @@ public static class RequestEndpoints
             {
                 return Results.NotFound(new { error = "Request not found." });
             }
-            if (request.Status != "In Review" || request.CurrentTier != approverTier.Value)
+            // Actionable when it's at this approver's tier AND either In Review, or Deferred
+            // at the Finance tier (so Finance can resolve a deferred request).
+            var actionable =
+                request.CurrentTier == approverTier.Value &&
+                (request.Status == "In Review" ||
+                 (request.Status == "Deferred" && approverTier.Value == 3));
+            if (!actionable)
             {
                 return Results.BadRequest(new { error = "This request is not awaiting your decision." });
+            }
+            // Pull-based lock: you can only decide a request you currently hold.
+            if (request.ClaimedBy != approverId)
+            {
+                return Results.BadRequest(new { error = "Claim this request before acting on it." });
             }
 
             // Normalise the decision and enforce the reason rule.
             var decision = dto.Decision?.Trim();
-            if (decision is not ("Approve" or "Reject" or "Return"))
+            if (decision is not ("Approve" or "Reject" or "Return" or "Defer"))
             {
-                return Results.BadRequest(new { error = "Decision must be Approve, Reject, or Return." });
+                return Results.BadRequest(new { error = "Decision must be Approve, Reject, Return, or Defer." });
             }
-            if ((decision is "Reject" or "Return") && string.IsNullOrWhiteSpace(dto.Reason))
+            // Defer is a Finance-tier (3) action only.
+            if (decision == "Defer" && approverTier.Value != 3)
             {
-                return Results.BadRequest(new { error = "A reason is required to reject or return a request." });
+                return Results.BadRequest(new { error = "Only the Finance Officer can defer a request." });
+            }
+            if ((decision is "Reject" or "Return" or "Defer") && string.IsNullOrWhiteSpace(dto.Reason))
+            {
+                return Results.BadRequest(new { error = "A reason is required to reject, return, or defer a request." });
             }
 
-            // Record the approval event (maps to the approvals.decision values).
-            var recordedDecision = decision switch
-            {
-                "Approve" => "Approved",
-                "Reject"  => "Rejected",
-                "Return"  => "Returned",
-                _ => decision
-            };
-            await approvals.CreateAsync(new Approval
-            {
-                RequestId = id,
-                ApproverId = approverId,
-                Tier = approverTier.Value,
-                Decision = recordedDecision,
-                Reason = dto.Reason,
-            });
+
+            // Defer isn't an approvals-table decision (that CHECK allows only
+            // Approved/Rejected/Returned); the status change + claim event record it.
+            if (decision != "Defer")
+            {   
+                var recordedDecision = decision switch
+                 {
+                    "Approve" => "Approved",
+                    "Reject"  => "Rejected",
+                    "Return"  => "Returned",
+                _       => decision
+                };
+                await approvals.CreateAsync(new Approval
+                {
+                    RequestId = id,
+                    ApproverId = approverId,
+                    Tier = approverTier.Value,
+                    Decision = recordedDecision,
+                    Reason = dto.Reason,
+                });
+            }
 
             // Route the request based on the decision.
             string newStatus;
@@ -393,6 +516,11 @@ public static class RequestEndpoints
                     newTier = approverTier.Value;
                     break;
 
+                case "Defer":
+                    newStatus = "Deferred";       // Finance: funds temporarily unavailable
+                    newTier = approverTier.Value; // stays at the Finance tier, re-actionable later
+                    break;
+
                 default: // Return
                     newStatus = "Returned";
                     newTier = approverTier.Value;
@@ -400,11 +528,23 @@ public static class RequestEndpoints
             }
 
             await requests.UpdateStatusAndTierAsync(id, newStatus, newTier);
+            // Persist the defer reason on the request (approvals can't hold a Deferred row).
+            if (decision == "Defer")
+            {
+                await requests.SetDeferReasonAsync(id, dto.Reason!.Trim());
+                // A deferral shouldn't consume the claim cap — give the officer their claim
+                // back so they can re-claim and resolve the request later.
+                await claims.RemoveLatestClaimAsync(id, approverId);
+            }
+
+            // A decision ends the holder's lock — release the claim so the request can be
+            // picked up again if it stays in play (advanced to the next tier, or deferred).
+            await claims.ReleaseAsync(id, approverId);
 
             return Results.Ok(new
             {
                 requestId = id,
-                decision = recordedDecision,
+                decision,
                 status = newStatus,
                 currentTier = newTier,
             });

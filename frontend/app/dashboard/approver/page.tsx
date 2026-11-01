@@ -11,10 +11,16 @@ type QueueItem = {
   amount: number;
   status: string;
   currentTier: number;
+  claimedBy: number | null;
+  myClaimCount: number;
   priorityLevel: string | null;
   validationNote: string | null;
   createdAt: string;
 };
+
+// Mirror of the backend's ClaimPolicy.MaxClaimsPerApprover (display threshold only;
+// the backend is the real enforcer).
+const CLAIM_CAP = 2;
 
 // Priority → badge colour (using the theme status tokens).
 const PRIORITY_STYLES: Record<string, string> = {
@@ -35,7 +41,22 @@ const STATUS_STYLES: Record<string, string> = {
   Approved: "bg-low/15 text-low",
   Rejected: "bg-kq-red/15 text-kq-red",
   Returned: "bg-ink-soft/15 text-ink-soft",
+  Deferred: "bg-ink-soft/15 text-ink-soft",
 };
+
+// Read the current user's id from the JWT's "sub" claim.
+function currentUserId(): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const token = localStorage.getItem("token");
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    const n = Number(payload.sub ?? payload.nameid);
+    return Number.isNaN(n) ? null : n;
+  } catch {
+    return null;
+  }
+}
 
 export default function ApproverDashboard() {
   const router = useRouter();
@@ -45,6 +66,8 @@ export default function ApproverDashboard() {
   const [decided, setDecided] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const myId = currentUserId();
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -161,48 +184,77 @@ export default function ApproverDashboard() {
 
         {queue.length > 0 && (
           <div className="mt-6 space-y-3">
-            {queue.map((item) => (
-              <div
-                key={item.requestId}
-                className={`rounded-2xl border border-line border-l-4 bg-surface p-5 transition hover:border-kq-red/40 ${
-                  item.priorityLevel
-                    ? PRIORITY_BAR[item.priorityLevel] ?? "border-l-line"
-                    : "border-l-line"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          item.priorityLevel
-                            ? PRIORITY_STYLES[item.priorityLevel] ?? "bg-ink-soft text-white"
-                            : "bg-line text-ink-soft"
-                        }`}
-                      >
-                        {item.priorityLevel ?? "Unclassified"}
-                      </span>
-                      <span className="font-medium text-ink">#{item.requestId}</span>
-                      <span className="text-ink">{item.category}</span>
-                    </div>
-                    <p className="mt-1.5 text-sm text-ink-soft">
-                      {item.requesterName} · KES {item.amount.toLocaleString()}
-                    </p>
-                    {item.validationNote && (
-                      <p className="mt-2 inline-block rounded-md bg-medium/10 px-2 py-1 text-xs text-medium">
-                        ⚑ {item.validationNote}
+            {queue.map((item) => {
+              const overCap = item.myClaimCount >= CLAIM_CAP;
+              const claimedByOther =
+                item.claimedBy != null && item.claimedBy !== myId;
+              const claimedByMe = item.claimedBy != null && item.claimedBy === myId;
+
+              return (
+                <div
+                  key={item.requestId}
+                  className={`rounded-2xl border border-line border-l-4 bg-surface p-5 transition ${
+                    item.priorityLevel
+                      ? PRIORITY_BAR[item.priorityLevel] ?? "border-l-line"
+                      : "border-l-line"
+                  } ${overCap ? "opacity-60" : "hover:border-kq-red/40"}`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            item.priorityLevel
+                              ? PRIORITY_STYLES[item.priorityLevel] ?? "bg-ink-soft text-white"
+                              : "bg-line text-ink-soft"
+                          }`}
+                        >
+                          {item.priorityLevel ?? "Unclassified"}
+                        </span>
+                        <span className="font-medium text-ink">#{item.requestId}</span>
+                        <span className="text-ink">{item.category}</span>
+                        {item.status === "Deferred" && (
+                          <span className="rounded-full bg-ink-soft/15 px-2 py-0.5 text-xs font-semibold text-ink-soft">
+                            Deferred
+                          </span>
+                        )}
+                        {claimedByMe && (
+                          <span className="rounded-full bg-low/15 px-2 py-0.5 text-xs font-semibold text-low">
+                            Claimed by you
+                          </span>
+                        )}
+                        {claimedByOther && (
+                          <span className="rounded-full bg-ink-soft/15 px-2 py-0.5 text-xs font-semibold text-ink-soft">
+                            Already claimed
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1.5 text-sm text-ink-soft">
+                        {item.requesterName} · KES {item.amount.toLocaleString()}
                       </p>
+                      {item.validationNote && (
+                        <p className="mt-2 inline-block rounded-md bg-medium/10 px-2 py-1 text-xs text-medium">
+                          ⚑ {item.validationNote}
+                        </p>
+                      )}
+                    </div>
+
+                    {overCap ? (
+                      <span className="shrink-0 rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink-soft">
+                        Claim limit reached
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => router.push(`/requests/${item.requestId}`)}
+                        className="shrink-0 rounded-lg border border-kq-red px-4 py-2 text-sm font-medium text-kq-red transition hover:bg-kq-red hover:text-white"
+                      >
+                        Review
+                      </button>
                     )}
                   </div>
-                  <button
-                    onClick={() => router.push(`/requests/${item.requestId}`)}
-                    className="shrink-0 rounded-lg border border-kq-red px-4 py-2 text-sm font-medium text-kq-red transition hover:bg-kq-red hover:text-white"
-                  >
-                    Review
-                  </button>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

@@ -15,6 +15,7 @@ public class RequestDetailDto
     public int? HasDocuments { get; set; }
     public string? ValidationNote { get; set; }
     public DateTime CreatedAt { get; set; }
+    public string? DeferReason { get; set; }
 
     // Prediction (null if unclassified).
     public string? PriorityLevel { get; set; }
@@ -22,6 +23,7 @@ public class RequestDetailDto
 
     // Approval history (empty until any approver has acted).
     public List<ApprovalHistoryItem> Approvals { get; set; } = new();
+    public int? ClaimedBy { get; set; }
 }
 
 public class ApprovalHistoryItem

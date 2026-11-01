@@ -8,6 +8,8 @@ public class QueueItemDto
     public decimal Amount { get; set; }
     public string Status { get; set; } = string.Empty;
     public int CurrentTier { get; set; }
+    public int? ClaimedBy { get; set; }
+    public int MyClaimCount { get; set; }
     public string? PriorityLevel { get; set; }   // null if unclassified
     public string? ValidationNote { get; set; }
     public DateTime CreatedAt { get; set; }
