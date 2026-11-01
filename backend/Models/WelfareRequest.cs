@@ -18,6 +18,8 @@ public class WelfareRequest
 
     public string Status { get; set; } = "Submitted";
     public int CurrentTier { get; set; }
+    public int? ClaimedBy { get; set; }
+    public string? DeferReason { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

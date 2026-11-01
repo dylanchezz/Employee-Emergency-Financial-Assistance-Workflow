@@ -69,14 +69,33 @@ CREATE TABLE welfare_requests (
                        'Returned',
                        'In Review',
                        'Approved',
-                       'Escalated'
+                       'Escalated',
+                       'Deferred'
                    )),
     current_tier   INTEGER NOT NULL DEFAULT 0
                    CHECK (current_tier BETWEEN 0 AND 4),
     created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    claimed_by     INTEGER
+                   REFERENCES users(user_id) ON DELETE SET NULL,
+                   defer_reason   TEXT
 );
 
+
+-- claim_events
+-- One row per claim/release action (pull-based claiming). Serves as the claim
+-- history and as the count source for the per-approver claim cap on a request.
+
+CREATE TABLE claim_events (
+    claim_event_id SERIAL PRIMARY KEY,
+    request_id     INTEGER NOT NULL
+                   REFERENCES welfare_requests(request_id) ON DELETE CASCADE,
+    approver_id    INTEGER NOT NULL
+                   REFERENCES users(user_id) ON DELETE RESTRICT,
+    action         VARCHAR(20) NOT NULL
+                   CHECK (action IN ('claim', 'release')),
+    created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 -- priority_predictions
 -- The Random Forest model's predicted priority for a request (one per request).

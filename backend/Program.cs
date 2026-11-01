@@ -43,6 +43,7 @@ builder.Services.AddScoped<IValidationService, ValidationService>();
 builder.Services.AddScoped<IPriorityPredictionRepository, PriorityPredictionRepository>();
 builder.Services.AddScoped<IApprovalRepository, ApprovalRepository>();
 builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
+builder.Services.AddScoped<IClaimRepository, ClaimRepository>();
 
 //Typed HttpClient for FastAPI model service
 var mlBaseUrl = builder.Configuration["MlService:BaseUrl"]

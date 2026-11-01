@@ -20,8 +20,10 @@ type RequestDetail = {
   description: string | null;
   status: string;
   currentTier: number;
+  claimedBy: number | null;
   hasDocuments: number | null;
   validationNote: string | null;
+  deferReason: string | null;
   createdAt: string;
   priorityLevel: string | null;
   explanation: string | null;   // JSON string of ShapFactor[]
@@ -34,38 +36,72 @@ const PRIORITY_STYLES: Record<string, string> = {
   Low: "bg-low text-white",
 };
 
-// Turn a raw model feature name into a plain-language label.
-function readableFeature(feature: string): string {
-  if (feature.startsWith("request_category_")) {
-    return `Category: ${feature.replace("request_category_", "")}`;
+// Read the current user's id from the JWT's "sub" claim (login stores the token
+// but not the id). Returns null if it can't be read.
+function currentUserId(): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const token = localStorage.getItem("token");
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    const n = Number(payload.sub ?? payload.nameid);
+    return Number.isNaN(n) ? null : n;
+  } catch {
+    return null;
   }
-  const map: Record<string, string> = {
-    requested_amount: "Requested amount",
-    salary: "Salary",
-    employment_duration_months: "Length of employment",
-    previous_requests: "Previous requests",
-    request_frequency: "Request frequency",
-    has_documents: "Supporting documents",
-  };
-  return map[feature] ?? feature;
 }
-// Build a one-sentence, plain-language summary from the top contributing factors
-// that PUSHED THE PRIORITY UP — the "why" an approver reads before the detail bars.
-function explanationSentence(
-  priority: string | null,
-  factors: ShapFactor[]
-): string | null {
-  if (!priority || factors.length === 0) return null;
-  const raisers = factors
-    .filter((f) => f.impact > 0)
-    .sort((a, b) => b.impact - a.impact)
-    .map((f) => readableFeature(f.feature).toLowerCase());
 
-  if (raisers.length === 0) {
-    return `This request was rated ${priority} priority based on its overall profile.`;
+// Describe one SHAP factor in plain language, using this request's actual values,
+// framed by its effect on priority. Returns null for factors that should be hidden
+// (the category one-hots for categories this request ISN'T).
+function describeFactor(
+  factor: ShapFactor,
+  detail: RequestDetail
+): { text: string; raisesPriority: boolean } | null {
+  const { feature, impact } = factor;
+
+  // Convert the class-relative SHAP sign into an urgency direction, using the
+  // predicted class. Positive impact pushes TOWARD the predicted class:
+  //   predicted High  → toward High  = higher priority
+  //   predicted Low   → toward Low   = lower priority (inverted)
+  //   predicted Medium→ no clean higher/lower (sign used as-is)
+  const priority = detail.priorityLevel;
+  let raisesPriority: boolean;
+  if (priority === "High") raisesPriority = impact >= 0;
+  else if (priority === "Low") raisesPriority = impact < 0;
+  else raisesPriority = impact >= 0;
+
+  const dir = raisesPriority ? "pushed toward higher priority" : "pushed toward lower priority";
+
+  // Category one-hot features: only describe the request's ACTUAL category; hide the rest.
+  if (feature.startsWith("request_category_")) {
+    const cat = feature.replace("request_category_", "");
+    if (cat !== detail.category) return null; // hide "not this category" noise
+    return { text: `This is a ${cat} request — ${dir}`, raisesPriority };
   }
-  const top = raisers.slice(0, 2).join(" and ");
-  return `This request was rated ${priority} priority mainly because of its ${top}.`;
+
+  // Numeric / boolean features, phrased with the request's real value.
+  switch (feature) {
+    case "has_documents":
+      return {
+        text: detail.hasDocuments
+          ? `Supporting documents were provided — ${dir}`
+          : `No supporting documents were provided — ${dir}`,
+        raisesPriority,
+      };
+    case "requested_amount":
+      return { text: `Requested amount (KES ${detail.amount.toLocaleString()}) — ${dir}`, raisesPriority };
+    case "salary":
+      return { text: `Stated salary — ${dir}`, raisesPriority };
+    case "employment_duration_months":
+      return { text: `Length of employment — ${dir}`, raisesPriority };
+    case "previous_requests":
+      return { text: `Number of previous requests — ${dir}`, raisesPriority };
+    case "request_frequency":
+      return { text: `How often requests are made — ${dir}`, raisesPriority };
+    default:
+      return { text: `${feature} — ${dir}`, raisesPriority };
+  }
 }
 
 export default function RequestDetailPage() {
@@ -80,6 +116,8 @@ export default function RequestDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [docError, setDocError] = useState("");
+
+  const myId = currentUserId();
 
   async function load() {
     const result = await apiFetch<RequestDetail>(`/requests/${id}`);
@@ -105,7 +143,35 @@ export default function RequestDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  async function decide(decision: "Approve" | "Reject" | "Return") {
+  async function claim() {
+    setMessage("");
+    setSubmitting(true);
+    const result = await apiFetch<{ requestId: number }>(`/requests/${id}/claim`, {
+      method: "POST",
+    });
+    setSubmitting(false);
+    if (!result.ok) {
+      setMessage(result.error);  // includes the over-cap message from the backend
+      return;
+    }
+    load();
+  }
+
+  async function release() {
+    setMessage("");
+    setSubmitting(true);
+    const result = await apiFetch<{ requestId: number }>(`/requests/${id}/release`, {
+      method: "POST",
+    });
+    setSubmitting(false);
+    if (!result.ok) {
+      setMessage(result.error);
+      return;
+    }
+    load();
+  }
+
+  async function decide(decision: "Approve" | "Reject" | "Return" | "Defer") {
     setMessage("");
     if ((decision === "Reject" || decision === "Return") && !reason.trim()) {
       setMessage("A reason is required to reject or return.");
@@ -124,7 +190,7 @@ export default function RequestDetailPage() {
     }
     setMessage(`Decision recorded: ${result.data.status}.`);
     setReason("");
-    load(); // refresh the detail (status/history will have changed)
+    load(); // refresh the detail (status/claim/history will have changed)
   }
 
   // The document endpoint is JWT-protected, so we can't use a plain <a href> (a browser
@@ -149,14 +215,13 @@ export default function RequestDetailPage() {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
-      // Release the object URL shortly after opening.
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch {
       setDocError("Could not reach the server to open the document.");
     }
   }
 
-  const factors: ShapFactor[] = detail?.explanation
+  const rawFactors: ShapFactor[] = detail?.explanation
     ? (() => {
         try {
           return JSON.parse(detail.explanation) as ShapFactor[];
@@ -165,10 +230,31 @@ export default function RequestDetailPage() {
         }
       })()
     : [];
-  const maxImpact = factors.reduce((m, f) => Math.max(m, Math.abs(f.impact)), 0) || 1;
-  const summary = explanationSentence(detail?.priorityLevel ?? null, factors);
 
-  // Only an approver at this request's tier, on an In-Review request, can decide.
+  // Describe each factor in plain language and drop the hidden (non-matching category) ones.
+  const described = detail
+    ? rawFactors
+        .map((f) => ({ factor: f, d: describeFactor(f, detail) }))
+        .filter(
+          (x): x is { factor: ShapFactor; d: { text: string; raisesPriority: boolean } } =>
+            x.d !== null
+        )
+    : [];
+  const maxImpact = described.reduce((m, x) => Math.max(m, Math.abs(x.factor.impact)), 0) || 1;
+
+  // Plain-language summary from the top factors that drove the rating.
+  const summary = (() => {
+    if (!detail?.priorityLevel || described.length === 0) return null;
+    const drivers = described
+      .filter((x) => x.d.raisesPriority === (detail.priorityLevel !== "Low"))
+      .slice(0, 2)
+      .map((x) => x.d.text.split(" — ")[0].replace(/^This is a /, "").toLowerCase());
+    if (drivers.length === 0) {
+      return `This request was rated ${detail.priorityLevel} priority based on its overall profile.`;
+    }
+    return `This request was rated ${detail.priorityLevel} priority mainly due to ${drivers.join(" and ")}.`;
+  })();
+
   const role = typeof window !== "undefined" ? localStorage.getItem("role") : null;
   const roleTier: Record<string, number> = {
     "Department Supervisor": 1,
@@ -176,23 +262,34 @@ export default function RequestDetailPage() {
     "Finance Officer": 3,
     "HR Manager": 4,
   };
-  const canDecide =
-    detail?.status === "In Review" &&
-    role != null &&
-    roleTier[role] === detail?.currentTier;
+  const isApprover = role != null && roleTier[role] !== undefined;
+
+  // Actionable at my tier when In Review at my tier, or (Finance only) Deferred at tier 3.
+  const atMyTier =
+    detail != null &&
+    isApprover &&
+    roleTier[role!] === detail.currentTier &&
+    (detail.status === "In Review" ||
+      (detail.status === "Deferred" && roleTier[role!] === 3));
+
+  const iHoldIt = detail != null && myId != null && detail.claimedBy === myId;
+  const heldByOther =
+    detail != null && detail.claimedBy != null && detail.claimedBy !== myId;
+
+  const canDecide = atMyTier && iHoldIt;
+  const canClaim = atMyTier && detail?.claimedBy == null;
+  const isFinance = role === "Finance Officer";
 
   return (
     <main className="min-h-screen px-6 py-10">
       <div className="mx-auto w-full max-w-2xl">
         <button
           onClick={() =>
-            router.push(
-              role && roleTier[role] ? "/dashboard/approver" : "/dashboard/employee"
-            )
+            router.push(isApprover ? "/dashboard/approver" : "/dashboard/employee")
           }
-          className = "text-sm text-ink-soft hover:text-ink transition"
-          >
-            ← Back to dashboard
+          className="text-sm text-ink-soft hover:text-ink transition"
+        >
+          ← Back to dashboard
         </button>
 
         {loading && <p className="mt-6 text-ink-soft">Loading…</p>}
@@ -225,7 +322,7 @@ export default function RequestDetailPage() {
               <Fact label="Amount (KES)" value={detail.amount.toLocaleString()} />
               <Fact label="Status" value={detail.status} />
               <Fact label="Current tier" value={String(detail.currentTier)} />
-               <div>
+              <div>
                 <p className="text-ink-soft">Documents</p>
                 {detail.hasDocuments ? (
                   <button
@@ -251,9 +348,15 @@ export default function RequestDetailPage() {
                   <p className="mt-0.5 text-medium">{detail.validationNote}</p>
                 </div>
               )}
+              {detail.status === "Deferred" && detail.deferReason && (
+                <div className="col-span-2">
+                  <p className="text-ink-soft">Reason for deferral</p>
+                  <p className="mt-0.5 text-ink">{detail.deferReason}</p>
+                </div>
+              )}
             </div>
 
-                      {/* SHAP explanation — plain-language summary first, then the detail bars. */}
+            {/* SHAP explanation — plain-language summary first, then the detail bars. */}
             <h2 className="mt-8 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
               Why this priority?
             </h2>
@@ -264,30 +367,30 @@ export default function RequestDetailPage() {
               </p>
             )}
 
-            {factors.length > 0 ? (
+            {described.length > 0 ? (
               <div className="mt-4 rounded-2xl border border-line bg-surface p-6">
                 <div className="flex items-center justify-between text-xs text-ink-soft">
-                  <span>Contributing factors</span>
+                  <span>Contributing factors (for this request)</span>
                   <span>
-                    <span className="text-high">↑ raises</span> ·{" "}
-                    <span className="text-low">↓ lowers</span> priority
+                    <span className="text-high">↑ higher</span> ·{" "}
+                    <span className="text-low">↓ lower</span> priority
                   </span>
                 </div>
                 <div className="mt-4 space-y-3">
-                  {factors.map((f) => {
-                    const raises = f.impact >= 0;
-                    const width = `${(Math.abs(f.impact) / maxImpact) * 100}%`;
+                  {described.map((x) => {
+                    const width = `${(Math.abs(x.factor.impact) / maxImpact) * 100}%`;
+                    const up = x.d.raisesPriority;
                     return (
-                      <div key={f.feature}>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-ink">{readableFeature(f.feature)}</span>
-                          <span className={raises ? "text-high" : "text-low"}>
-                            {raises ? "↑ raises" : "↓ lowers"}
+                      <div key={x.factor.feature}>
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                          <span className="text-ink">{x.d.text}</span>
+                          <span className={`shrink-0 ${up ? "text-high" : "text-low"}`}>
+                            {up ? "↑ higher" : "↓ lower"}
                           </span>
                         </div>
                         <div className="mt-1 h-2 w-full rounded-full bg-canvas">
                           <div
-                            className={`h-2 rounded-full ${raises ? "bg-high" : "bg-low"}`}
+                            className={`h-2 rounded-full ${up ? "bg-high" : "bg-low"}`}
                             style={{ width }}
                           />
                         </div>
@@ -296,8 +399,8 @@ export default function RequestDetailPage() {
                   })}
                 </div>
                 <p className="mt-4 border-t border-line pt-3 text-xs text-ink-soft">
-                  These are the factors that most influenced the model&apos;s ranking —
-                  a transparency aid, not a confidence score. The final decision is the approver&apos;s.
+                  These are the factors that most influenced the model&apos;s ranking of this
+                  request — a transparency aid, not a confidence score. The final decision is the approver&apos;s.
                 </p>
               </div>
             ) : (
@@ -324,49 +427,99 @@ export default function RequestDetailPage() {
               </>
             )}
 
-            {/* Decision controls */}
-            {canDecide ? (
+            {/* Claim / decision area — only for an approver whose tier this request is at. */}
+            {atMyTier && (
               <div className="mt-8 rounded-2xl border border-line bg-surface p-6">
-                <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
-                  Your decision
-                </h2>
-                <label className="mt-3 block text-sm text-ink-soft">
-                  Comment / reason (required to reject or return)
-                </label>
-                <textarea
-                  rows={2}
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
-                  placeholder="Add a comment…"
-                />
-                <div className="mt-4 flex gap-3">
-                  <button
-                    onClick={() => decide("Approve")}
-                    disabled={submitting}
-                    className="rounded-lg bg-low px-4 py-2 font-medium text-white transition hover:opacity-90 disabled:opacity-60"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => decide("Return")}
-                    disabled={submitting}
-                    className="rounded-lg bg-medium px-4 py-2 font-medium text-white transition hover:opacity-90 disabled:opacity-60"
-                  >
-                    Return
-                  </button>
-                  <button
-                    onClick={() => decide("Reject")}
-                    disabled={submitting}
-                    className="rounded-lg bg-kq-red px-4 py-2 font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60"
-                  >
-                    Reject
-                  </button>
-                </div>
+                {/* Claim state + claim/release controls */}
+                {heldByOther ? (
+                  <p className="text-sm text-ink-soft">
+                    This request is currently claimed by another officer. You can act on
+                    it only if they release it.
+                  </p>
+                ) : iHoldIt ? (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-low">You have claimed this request.</p>
+                    <button
+                      onClick={release}
+                      disabled={submitting}
+                      className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-canvas disabled:opacity-60"
+                    >
+                      Release
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-ink-soft">
+                      Claim this request to review and act on it.
+                    </p>
+                    <button
+                      onClick={claim}
+                      disabled={submitting || !canClaim}
+                      className="rounded-lg bg-kq-red px-4 py-2 text-sm font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60"
+                    >
+                      Claim
+                    </button>
+                  </div>
+                )}
+
+                {/* Decision controls — only when I hold the claim. */}
+                {canDecide && (
+                  <div className="mt-5 border-t border-line pt-5">
+                    <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
+                      Your decision
+                    </h2>
+                    <label className="mt-3 block text-sm text-ink-soft">
+                      Comment / reason (required to reject, return, or defer)
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                      placeholder="Add a comment…"
+                    />
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        onClick={() => decide("Approve")}
+                        disabled={submitting}
+                        className="rounded-lg bg-low px-4 py-2 font-medium text-white transition hover:opacity-90 disabled:opacity-60"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => decide("Return")}
+                        disabled={submitting}
+                        className="rounded-lg bg-medium px-4 py-2 font-medium text-white transition hover:opacity-90 disabled:opacity-60"
+                      >
+                        Return
+                      </button>
+                      <button
+                        onClick={() => decide("Reject")}
+                        disabled={submitting}
+                        className="rounded-lg bg-kq-red px-4 py-2 font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60"
+                      >
+                        Reject
+                      </button>
+                      {isFinance && (
+                        <button
+                          onClick={() => decide("Defer")}
+                          disabled={submitting}
+                          className="rounded-lg border border-ink-soft px-4 py-2 font-medium text-ink transition hover:bg-canvas disabled:opacity-60"
+                        >
+                          Defer
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {message && <p className="mt-4 text-sm text-ink">{message}</p>}
               </div>
-            ) : (
-              message && <p className="mt-6 text-sm text-ink">{message}</p>
+            )}
+
+            {/* Messages for non-actionable states (e.g. an employee viewing, or over-cap). */}
+            {!atMyTier && message && (
+              <p className="mt-6 text-sm text-ink">{message}</p>
             )}
           </>
         )}

@@ -12,9 +12,10 @@ public interface IWelfareRequestRepository
     Task<int> CountByUserSinceAsync(int userId, DateTime since);
     Task<bool> HasRecentSimilarAsync(int userId, string category, DateTime since);
     Task<int> CountNonRejectedByUserSinceAsync(int userId, DateTime since);
-    Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier);
+    Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier, int approverId);
     Task UpdateStatusAndTierAsync(int requestId, string status, int currentTier);
     Task<IEnumerable<QueueItemDto>> GetByUserAsync(int userId);
+    Task SetDeferReasonAsync(int requestId, string reason);
 }
 
 public class WelfareRequestRepository : IWelfareRequestRepository
@@ -57,8 +58,11 @@ public class WelfareRequestRepository : IWelfareRequestRepository
                    has_documents              AS HasDocuments,
                    status                     AS Status,
                    current_tier               AS CurrentTier,
+                   claimed_by                 AS ClaimedBy,
+                   defer_reason               AS DeferReason,
                    validation_note            AS ValidationNote,
                    created_at                 AS CreatedAt,
+                   
                    updated_at                 AS UpdatedAt
             FROM welfare_requests
             WHERE request_id = @RequestId;";
@@ -113,8 +117,11 @@ public class WelfareRequestRepository : IWelfareRequestRepository
             sql, new { UserId = userId, Since = since });
     }
 
-    public async Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier)
+    public async Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier, int approverId)
     {
+        // Shared tier pool: In-Review requests at this tier, plus Deferred at Finance (3).
+        // Every such request is shown (claimed or not) so the queue can mark "Already Claimed";
+        // my_claim_count tells the UI whether THIS viewer has hit their per-request claim cap.
         const string sql = @"
             SELECT r.request_id        AS RequestId,
                    u.name              AS RequesterName,
@@ -122,14 +129,22 @@ public class WelfareRequestRepository : IWelfareRequestRepository
                    r.amount            AS Amount,
                    r.status            AS Status,
                    r.current_tier      AS CurrentTier,
+                   r.claimed_by        AS ClaimedBy,
                    p.priority_level    AS PriorityLevel,
                    r.validation_note   AS ValidationNote,
-                   r.created_at        AS CreatedAt
+                   r.created_at        AS CreatedAt,
+                   (SELECT COUNT(*) FROM claim_events ce
+                     WHERE ce.request_id = r.request_id
+                       AND ce.approver_id = @ApproverId
+                       AND ce.action = 'claim')  AS MyClaimCount
             FROM welfare_requests r
             JOIN users u ON u.user_id = r.user_id
             LEFT JOIN priority_predictions p ON p.request_id = r.request_id
-            WHERE r.status = 'In Review'
-              AND r.current_tier = @Tier
+            WHERE r.current_tier = @Tier
+              AND (
+                    r.status = 'In Review'
+                    OR (r.status = 'Deferred' AND @Tier = 3)
+                  )
             ORDER BY
                 CASE p.priority_level
                     WHEN 'High'   THEN 1
@@ -140,7 +155,8 @@ public class WelfareRequestRepository : IWelfareRequestRepository
                 r.created_at ASC;";
 
         using var connection = _factory.CreateConnection();
-        return await connection.QueryAsync<QueueItemDto>(sql, new { Tier = tier });
+        return await connection.QueryAsync<QueueItemDto>(
+            sql, new { Tier = tier, ApproverId = approverId });
     }
 
     public async Task UpdateStatusAndTierAsync(int requestId, string status, int currentTier)
@@ -176,5 +192,14 @@ public class WelfareRequestRepository : IWelfareRequestRepository
 
         using var connection = _factory.CreateConnection();
         return await connection.QueryAsync<QueueItemDto>(sql, new { UserId = userId});
+    }
+        public async Task SetDeferReasonAsync(int requestId, string reason)
+    {
+        const string sql = @"
+            UPDATE welfare_requests
+            SET defer_reason = @Reason, updated_at = CURRENT_TIMESTAMP
+            WHERE request_id = @RequestId;";
+        using var connection = _factory.CreateConnection();
+        await connection.ExecuteAsync(sql, new { RequestId = requestId, Reason = reason });
     }
 }
