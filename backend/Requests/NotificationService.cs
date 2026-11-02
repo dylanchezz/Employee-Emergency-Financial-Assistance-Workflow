@@ -14,6 +14,25 @@ public interface INotificationService
 
     // Notify the employee when validation rejects/returns their request at submission.
     Task OnSubmissionOutcomeAsync(int requestId, int employeeId, string status, string? note);
+
+    // Alert all System Administrators about a request needing attention (HR overdue,
+    // Notify the new tier's approvers that a request was escalated UP to them.
+    Task OnEscalatedToTierAsync(int requestId, int newTier);
+
+    // Notify same-tier peers that a request was released to them (a colleague didn't action it).
+    Task OnReleasedToPeersAsync(int requestId, int tier, int slowOfficerId);
+
+    // Notify the employee that their request was escalated because it wasn't actioned in time.
+    Task OnEscalatedNotifyEmployeeAsync(int requestId, int employeeId, bool wentUpATier);
+
+    // Alert all System Administrators; optionally name the responsible officer for follow-up.
+    Task OnAdminAlertAsync(int requestId, string message, int? responsibleOfficerId);
+
+    // Tell the officer who claimed a request but didn't action it that it was taken from them.
+    Task OnSlowOfficerAsync(int requestId, int officerId, bool wentUpATier);
+
+    // Tell all approvers at a tier that an unclaimed request escalated past their level.
+    Task OnTierMissedAsync(int requestId, int tier);
 }
 
 public class NotificationService : INotificationService
@@ -83,6 +102,86 @@ public class NotificationService : INotificationService
             ? $"Your request #{requestId} was rejected at submission." + ReasonSuffix(note)
             : $"Your request #{requestId} was returned at submission." + ReasonSuffix(note);
         await _notifications.CreateAsync(requestId, employeeId, message);
+    }
+
+
+            public async Task OnEscalatedToTierAsync(int requestId, int newTier)
+    {
+        var role = RoleForTier(newTier);
+        if (role is null) return;
+        var approverIds = await _users.GetIdsByRoleAsync(role);
+        foreach (var approverId in approverIds)
+        {
+            await _notifications.CreateAsync(
+                requestId, approverId,
+                $"Request #{requestId} was escalated to you (not actioned in time at the previous stage) and is awaiting your review.");
+        }
+    }
+
+    public async Task OnReleasedToPeersAsync(int requestId, int tier, int slowOfficerId)
+    {
+        var role = RoleForTier(tier);
+        if (role is null) return;
+        var ids = await _users.GetIdsByRoleAsync(role);
+        foreach (var id in ids)
+        {
+            if (id == slowOfficerId) continue; // don't ping the officer it was taken from
+            await _notifications.CreateAsync(
+                requestId, id,
+                $"Request #{requestId} was released back to the queue (a colleague didn't action it in time) and is available to claim.");
+        }
+    }
+
+    public async Task OnEscalatedNotifyEmployeeAsync(int requestId, int employeeId, bool wentUpATier)
+    {
+        var message = wentUpATier
+            ? $"Your request #{requestId} was escalated to a higher approval level because it wasn't actioned in time."
+            : $"Your request #{requestId} was reassigned because the assigned officer didn't action it in time. It remains at the same stage.";
+        await _notifications.CreateAsync(requestId, employeeId, message);
+    }
+
+    public async Task OnAdminAlertAsync(int requestId, string message, int? responsibleOfficerId)
+    {
+        // If a specific officer is responsible, append their name + email for follow-up.
+        var fullMessage = message;
+        if (responsibleOfficerId is not null)
+        {
+            var contact = await _users.GetContactByIdAsync(responsibleOfficerId.Value);
+            if (contact is not null)
+            {
+                fullMessage += $" Responsible officer: {contact.Value.Name} ({contact.Value.Email}).";
+            }
+        }
+        else
+        {
+            fullMessage += " The request was unclaimed in the queue.";
+        }
+
+        var adminIds = await _users.GetIdsByRoleAsync("System Administrator");
+        foreach (var adminId in adminIds)
+        {
+            await _notifications.CreateAsync(requestId, adminId, fullMessage);
+        }
+    }
+        public async Task OnSlowOfficerAsync(int requestId, int officerId, bool wentUpATier)
+    {
+        var message = wentUpATier
+            ? $"Request #{requestId} was escalated to a higher level because you did not action it in time."
+            : $"Request #{requestId} was reassigned to your team because you did not action it in time.";
+        await _notifications.CreateAsync(requestId, officerId, message);
+    }
+
+    public async Task OnTierMissedAsync(int requestId, int tier)
+    {
+        var role = RoleForTier(tier);
+        if (role is null) return;
+        var ids = await _users.GetIdsByRoleAsync(role);
+        foreach (var id in ids)
+        {
+            await _notifications.CreateAsync(
+                requestId, id,
+                $"Request #{requestId} escalated past your level — it was not claimed and actioned in time.");
+        }
     }
 
     private static string ReasonSuffix(string? reason) =>

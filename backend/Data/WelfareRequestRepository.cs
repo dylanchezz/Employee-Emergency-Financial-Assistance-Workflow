@@ -16,6 +16,10 @@ public interface IWelfareRequestRepository
     Task UpdateStatusAndTierAsync(int requestId, string status, int currentTier);
     Task<IEnumerable<QueueItemDto>> GetByUserAsync(int userId);
     Task SetDeferReasonAsync(int requestId, string reason);
+    Task<IEnumerable<WelfareRequest>> GetOverdueInReviewAsync(DateTime cutoffUtc);
+    Task<IEnumerable<WelfareRequest>> GetOverdueReturnedAsync(DateTime cutoffUtc);
+    Task<IEnumerable<WelfareRequest>> GetOverdueDeferredAsync(DateTime cutoffUtc);
+    Task RecordEscalationAsync(int requestId, int tier);
 }
 
 public class WelfareRequestRepository : IWelfareRequestRepository
@@ -201,5 +205,58 @@ public class WelfareRequestRepository : IWelfareRequestRepository
             WHERE request_id = @RequestId;";
         using var connection = _factory.CreateConnection();
         await connection.ExecuteAsync(sql, new { RequestId = requestId, Reason = reason });
+    }
+        // In-Review requests whose clock (updated_at) is older than the cutoff — i.e. they
+    // have sat unactioned at their current tier past the response window.
+    public async Task<IEnumerable<WelfareRequest>> GetOverdueInReviewAsync(DateTime cutoffUtc)
+    {
+        const string sql = @"
+            SELECT request_id                 AS RequestId,
+                   user_id                    AS UserId,
+                   status                     AS Status,
+                   current_tier               AS CurrentTier,
+                   claimed_by                 AS ClaimedBy,
+                   updated_at                 AS UpdatedAt
+            FROM welfare_requests
+            WHERE status = 'In Review'
+              AND updated_at < @Cutoff;";
+        using var connection = _factory.CreateConnection();
+        return await connection.QueryAsync<WelfareRequest>(sql, new { Cutoff = cutoffUtc });
+    }
+
+    // Returned requests older than the cutoff (clarification not answered in time).
+    public async Task<IEnumerable<WelfareRequest>> GetOverdueReturnedAsync(DateTime cutoffUtc)
+    {
+        const string sql = @"
+            SELECT request_id AS RequestId, user_id AS UserId, status AS Status,
+                   current_tier AS CurrentTier, updated_at AS UpdatedAt
+            FROM welfare_requests
+            WHERE status = 'Returned'
+              AND updated_at < @Cutoff;";
+        using var connection = _factory.CreateConnection();
+        return await connection.QueryAsync<WelfareRequest>(sql, new { Cutoff = cutoffUtc });
+    }
+
+    // Deferred requests older than the cutoff (sat at Finance too long).
+    public async Task<IEnumerable<WelfareRequest>> GetOverdueDeferredAsync(DateTime cutoffUtc)
+    {
+        const string sql = @"
+            SELECT request_id AS RequestId, user_id AS UserId, status AS Status,
+                   current_tier AS CurrentTier, updated_at AS UpdatedAt
+            FROM welfare_requests
+            WHERE status = 'Deferred'
+              AND updated_at < @Cutoff;";
+        using var connection = _factory.CreateConnection();
+        return await connection.QueryAsync<WelfareRequest>(sql, new { Cutoff = cutoffUtc });
+    }
+
+    // Record an escalation event (the escalations table).
+    public async Task RecordEscalationAsync(int requestId, int tier)
+    {
+        const string sql = @"
+            INSERT INTO escalations (request_id, tier)
+            VALUES (@RequestId, @Tier);";
+        using var connection = _factory.CreateConnection();
+        await connection.ExecuteAsync(sql, new { RequestId = requestId, Tier = tier });
     }
 }
