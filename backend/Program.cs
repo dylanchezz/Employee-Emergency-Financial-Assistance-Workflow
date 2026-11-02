@@ -44,6 +44,8 @@ builder.Services.AddScoped<IPriorityPredictionRepository, PriorityPredictionRepo
 builder.Services.AddScoped<IApprovalRepository, ApprovalRepository>();
 builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
 builder.Services.AddScoped<IClaimRepository, ClaimRepository>();
+builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 //Typed HttpClient for FastAPI model service
 var mlBaseUrl = builder.Configuration["MlService:BaseUrl"]
@@ -123,4 +125,5 @@ app.MapGet("/api/health/db", async (IDbConnectionFactory factory) =>
 app.MapAuthEndpoints();
 app.MapProtectedTestEndpoints();
 app.MapRequestEndpoints();
+app.MapNotificationEndpoints();
 app.Run();

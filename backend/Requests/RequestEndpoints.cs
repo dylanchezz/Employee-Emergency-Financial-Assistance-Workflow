@@ -23,7 +23,8 @@ public static class RequestEndpoints
             IValidationService validation,
             IModelService modelService,
             IPriorityPredictionRepository predictions,
-            IDocumentRepository documents) =>
+            IDocumentRepository documents,
+            INotificationService notifications) =>
         {
             // Identify submitter from the token, not the request body.
             var userIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
@@ -120,6 +121,8 @@ public static class RequestEndpoints
 
             // Store the request first so we have its id (for the prediction and the document).
             var newId = await requests.CreateAsync(request);
+            // If validation stopped the request at submission, tell the employee.
+            await notifications.OnSubmissionOutcomeAsync(newId, userId, request.Status, request.ValidationNote);
 
             // If a valid file was attached, store it against the new request. Best-effort:
             // a document write failure must not lose an otherwise valid request.
@@ -323,7 +326,8 @@ public static class RequestEndpoints
             int id,
             ClaimsPrincipal principal,
             IWelfareRequestRepository requests,
-            IClaimRepository claims) =>
+            IClaimRepository claims,
+            INotificationService notifications) =>
         {
             var role = principal.FindFirstValue(ClaimTypes.Role);
             var approverTier = TierForRole(role);
@@ -416,7 +420,8 @@ public static class RequestEndpoints
             ClaimsPrincipal principal,
             IWelfareRequestRepository requests,
             IApprovalRepository approvals,
-            IClaimRepository claims) =>
+            IClaimRepository claims,
+            INotificationService notifications) =>
         {
             // Who is acting, and at what tier.
             var approverIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
@@ -540,6 +545,15 @@ public static class RequestEndpoints
             // A decision ends the holder's lock — release the claim so the request can be
             // picked up again if it stays in play (advanced to the next tier, or deferred).
             await claims.ReleaseAsync(id, approverId);
+
+                    // Notify the employee of the outcome, and the next tier's approvers if it advanced.
+            await notifications.OnDecisionAsync(
+                requestId: id,
+                employeeId: request.UserId,
+                decision: decision!,
+                newStatus: newStatus,
+                nextTier: newTier,
+                reason: dto.Reason);
 
             return Results.Ok(new
             {

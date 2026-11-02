@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import NotificationBell from "../../components/NotificationBell";
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -36,6 +37,7 @@ export default function AdminDashboard() {
             Signed in as {name} · {role}
           </p>
         </div>
+        <NotificationBell />
         <button
           onClick={handleLogout}
           className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas"

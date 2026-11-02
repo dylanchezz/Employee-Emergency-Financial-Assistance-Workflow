@@ -9,6 +9,7 @@ public interface IUserRepository
     Task<User?> GetByEmailAsync(string email);
     Task<int> CreateAsync(User user);
     Task<string?> GetNameByIdAsync(int userId);
+    Task<IEnumerable<int>> GetIdsByRoleAsync(string role);
 }
 
 public class UserRepository : IUserRepository
@@ -48,5 +49,12 @@ public class UserRepository : IUserRepository
         const string sql = "SELECT name FROM users WHERE user_id = @UserId;";
         using var connection = _factory.CreateConnection();
         return await connection.QuerySingleOrDefaultAsync<string>(sql, new { UserId = userId });
+    }
+    // All user ids with a given role — used to notify every approver at a tier.
+    public async Task<IEnumerable<int>> GetIdsByRoleAsync(string role)
+    {
+        const string sql = "SELECT user_id FROM users WHERE role = @Role;";
+        using var connection = _factory.CreateConnection();
+        return await connection.QueryAsync<int>(sql, new { Role = role });
     }
 }

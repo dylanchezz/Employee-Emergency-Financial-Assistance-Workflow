@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
+import NotificationBell from "../../components/NotificationBell";
 
 type QueueItem = {
   requestId: number;
@@ -124,6 +125,7 @@ export default function ApproverDashboard() {
               {name} · {role}
             </p>
           </div>
+          <NotificationBell />
           <button
             onClick={handleLogout}
             className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas"
