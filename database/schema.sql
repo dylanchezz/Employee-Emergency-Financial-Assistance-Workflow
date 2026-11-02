@@ -93,7 +93,7 @@ CREATE TABLE claim_events (
     approver_id    INTEGER NOT NULL
                    REFERENCES users(user_id) ON DELETE RESTRICT,
     action         VARCHAR(20) NOT NULL
-                   CHECK (action IN ('claim', 'release')),
+                   CHECK (action IN ('claim', 'release', 'escalate_release')),
     created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
