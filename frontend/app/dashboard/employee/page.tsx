@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
+import NotificationBell from "../../components/NotificationBell";
 
 type MyRequest = {
   requestId: number;
@@ -74,6 +75,7 @@ export default function EmployeeDashboard() {
             </h1>
             <p className="mt-2 text-ink-soft">Signed in as {name}</p>
           </div>
+          <NotificationBell />
           <button
             onClick={handleLogout}
             className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas"
