@@ -24,6 +24,39 @@ public static class AdminEndpoints
         // Every endpoint in this group requires the caller to be a System Administrator.
         var group = app.MapGroup("/api/admin")
             .RequireAuthorization(policy => policy.RequireRole("System Administrator"));
+                    // The current validation-rule thresholds, read from the ValidationService constants
+        // (one source of truth). Read-only — editing rules at runtime is future work.
+        group.MapGet("/rules", () =>
+        {
+            var rules = new[]
+            {
+                new
+                {
+                    name = "Maximum request amount",
+                    value = $"{backend.Requests.ValidationService.SalaryMultiplierCap}× gross salary",
+                    effect = "A request above this is flagged for approver review (not auto-blocked).",
+                },
+                new
+                {
+                    name = "Minimum employment duration",
+                    value = $"{backend.Requests.ValidationService.MinEmploymentMonths} months",
+                    effect = "Under this, the request is flagged for approver review.",
+                },
+                new
+                {
+                    name = "Annual request limit",
+                    value = $"{backend.Requests.ValidationService.MaxRequestsPerYear} requests / 12 months",
+                    effect = "Reaching this limit auto-rejects a new request (hard block).",
+                },
+                new
+                {
+                    name = "Duplicate-request window",
+                    value = $"{backend.Requests.ValidationService.DuplicateWindowDays} days",
+                    effect = "A same-category request within this window is returned to confirm it isn't a duplicate.",
+                },
+            };
+            return Results.Ok(rules);
+        });
 
         // List all users (no password hashes) for the management table.
         group.MapGet("/users", async (IUserRepository users) =>

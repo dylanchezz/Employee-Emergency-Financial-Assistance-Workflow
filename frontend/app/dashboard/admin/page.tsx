@@ -24,12 +24,19 @@ type AdminUser = {
   createdAt: string;
 };
 
+type ValidationRule = {
+  name: string;
+  value: string;
+  effect: string;
+};
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
 
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [rules, setRules] = useState<ValidationRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -61,6 +68,10 @@ export default function AdminDashboard() {
     }
     setUsers(result.data);
   }
+    async function loadRules() {
+    const result = await apiFetch<ValidationRule[]>("/admin/rules");
+    if (result.ok) setRules(result.data);
+  }
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -71,6 +82,7 @@ export default function AdminDashboard() {
     setName(localStorage.getItem("name") ?? "");
     setRole(localStorage.getItem("role") ?? "");
     loadUsers();
+    loadRules();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
@@ -283,6 +295,33 @@ export default function AdminDashboard() {
               </tbody>
             </table>
           </div>
+        )}
+
+        {/* Validation rules — read-only view of the current thresholds. */}
+        {rules.length > 0 && (
+          <>
+            <h2 className="mt-10 font-[family-name:var(--font-heading)] text-xl font-semibold text-ink">
+              Validation rules
+            </h2>
+            <p className="mt-1 text-sm text-ink-soft">
+              The current rule thresholds applied to every submission. These are read-only;
+              adjusting them at runtime is planned future work.
+            </p>
+            <div className="mt-4 space-y-3">
+              {rules.map((r) => (
+                <div
+                  key={r.name}
+                  className="rounded-2xl border border-line bg-surface p-4"
+                >
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="font-medium text-ink">{r.name}</span>
+                    <span className="shrink-0 font-semibold text-kq-red">{r.value}</span>
+                  </div>
+                  <p className="mt-1 text-sm text-ink-soft">{r.effect}</p>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </main>
