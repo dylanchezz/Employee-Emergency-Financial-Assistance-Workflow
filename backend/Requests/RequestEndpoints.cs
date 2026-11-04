@@ -24,7 +24,8 @@ public static class RequestEndpoints
             IModelService modelService,
             IPriorityPredictionRepository predictions,
             IDocumentRepository documents,
-            INotificationService notifications) =>
+            INotificationService notifications,
+            IAuditRepository audit) =>
         {
             // Identify submitter from the token, not the request body.
             var userIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
@@ -124,6 +125,16 @@ public static class RequestEndpoints
             // If validation stopped the request at submission, tell the employee.
             await notifications.OnSubmissionOutcomeAsync(newId, userId, request.Status, request.ValidationNote);
 
+            // Audit: the submission, and the validation outcome (the actor is the employee).
+            await audit.LogAsync(newId, userId, "Submitted the request.");
+            await audit.LogAsync(newId, userId, request.Status switch
+            {
+                "In Review" => "Passed rule-based validation.",
+                "Rejected"  => $"Rejected at validation: {request.ValidationNote}",
+                "Returned"  => $"Returned at validation: {request.ValidationNote}",
+                _           => $"Validation outcome: {request.Status}",
+            });
+
             // If a valid file was attached, store it against the new request. Best-effort:
             // a document write failure must not lose an otherwise valid request.
             if (fileBytes is not null)
@@ -160,7 +171,6 @@ public static class RequestEndpoints
                 };
 
                 var prediction = await modelService.PredictAsync(predictRequest);
-
                 if (prediction is not null)
                 {
                     priority = prediction.Priority;
@@ -170,6 +180,8 @@ public static class RequestEndpoints
                         PriorityLevel = prediction.Priority,
                         Explanation = JsonSerializer.Serialize(prediction.Explanation),
                     });
+                    // Audit: classification is a system action (no human actor).
+                    await audit.LogAsync(newId, null, $"Classified as {prediction.Priority} priority by the model.");
                 }
             }
 
@@ -202,7 +214,8 @@ public static class RequestEndpoints
             IPriorityPredictionRepository predictions,
             IDocumentRepository documents,
             IClaimRepository claims,
-            INotificationService notifications) =>
+            INotificationService notifications,
+            IAuditRepository audit) =>
         {
             // Identify the caller from the token.
             var userIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
@@ -307,6 +320,9 @@ public static class RequestEndpoints
                 }
             }
 
+            // Audit: the employee resubmitted (the actor is the employee).
+            await audit.LogAsync(id, userId, "Resubmitted the request with clarifications.");
+
             // Validation failed again → the request stops here (Rejected/Returned), same as
             // a fresh submission. Notify the employee and do not re-enter the queue.
             if (validationResult.Outcome != ValidationOutcome.Validated)
@@ -314,6 +330,9 @@ public static class RequestEndpoints
                 await requests.UpdateStatusAndTierAsync(id, validationResult.Status, 0);
                 await notifications.OnSubmissionOutcomeAsync(
                     id, userId, validationResult.Status, request.ValidationNote);
+                await audit.LogAsync(id, userId, validationResult.Status == "Rejected"
+                    ? $"Rejected again at validation on resubmit: {request.ValidationNote}"
+                    : $"Returned again at validation on resubmit: {request.ValidationNote}");
                 return Results.Ok(new
                 {
                     requestId = id,
@@ -384,6 +403,15 @@ public static class RequestEndpoints
 
             // Notify. If pre-assigned, tell that one officer; otherwise tell the whole tier.
             await notifications.OnResubmittedAsync(id, userId, returningTier, preAssignedTo);
+
+            // Audit: the re-classification (system) and the re-entry into review.
+            if (priority is not null)
+            {
+                await audit.LogAsync(id, null, $"Re-classified as {priority} priority on resubmit.");
+            }
+            await audit.LogAsync(id, null,
+                $"Re-entered review at tier {returningTier}" +
+                (preAssignedTo is not null ? " (assigned to the returning approver)." : " (shared queue)."));
 
             return Results.Ok(new
             {
@@ -641,7 +669,8 @@ public static class RequestEndpoints
             IWelfareRequestRepository requests,
             IApprovalRepository approvals,
             IClaimRepository claims,
-            INotificationService notifications) =>
+            INotificationService notifications,
+            IAuditRepository audit) =>
         {
             // Who is acting, and at what tier.
             var approverIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
@@ -766,7 +795,7 @@ public static class RequestEndpoints
             // picked up again if it stays in play (advanced to the next tier, or deferred).
             await claims.ReleaseAsync(id, approverId);
 
-                    // Notify the employee of the outcome, and the next tier's approvers if it advanced.
+            // Notify the employee of the outcome, and the next tier's approvers if it advanced.
             await notifications.OnDecisionAsync(
                 requestId: id,
                 employeeId: request.UserId,
@@ -774,6 +803,18 @@ public static class RequestEndpoints
                 newStatus: newStatus,
                 nextTier: newTier,
                 reason: dto.Reason);
+
+            // Audit: record the decision (the actor is the approver who made it).
+            var auditAction = decision switch
+            {
+                "Approve" when newStatus == "Approved" => $"Fully approved at HR (tier {approverTier.Value}).",
+                "Approve" => $"Approved at tier {approverTier.Value}; advanced to tier {newTier}.",
+                "Reject"  => $"Rejected at tier {approverTier.Value}: {dto.Reason}",
+                "Return"  => $"Returned for clarification at tier {approverTier.Value}: {dto.Reason}",
+                "Defer"   => $"Deferred at Finance (tier {approverTier.Value}): {dto.Reason}",
+                _         => $"Decision '{decision}' at tier {approverTier.Value}.",
+            };
+            await audit.LogAsync(id, approverId, auditAction);
 
             return Results.Ok(new
             {

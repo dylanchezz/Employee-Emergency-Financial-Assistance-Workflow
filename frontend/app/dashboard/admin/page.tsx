@@ -41,6 +41,14 @@ type AttentionItem = {
   officerName: string | null;
   officerEmail: string | null;
 };
+type AuditEntry = {
+  logId: number;
+  requestId: number;
+  actorId: number | null;
+  actorName: string | null;
+  action: string;
+  loggedAt: string;
+};
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -50,6 +58,7 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [rules, setRules] = useState<ValidationRule[]>([]);
   const [attention, setAttention] = useState<AttentionItem[]>([]);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -89,6 +98,10 @@ export default function AdminDashboard() {
     const result = await apiFetch<AttentionItem[]>("/admin/attention");
     if (result.ok) setAttention(result.data);
   }
+    async function loadAudit() {
+    const result = await apiFetch<AuditEntry[]>("/admin/audit");
+    if (result.ok) setAudit(result.data);
+  }
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -101,6 +114,7 @@ export default function AdminDashboard() {
     loadUsers();
     loadRules();
     loadAttention();
+    loadAudit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
@@ -377,6 +391,51 @@ export default function AdminDashboard() {
                   <p className="mt-1 text-sm text-ink-soft">{r.effect}</p>
                 </div>
               ))}
+            </div>
+          </>
+        )}
+
+        {/* Recent activity — the unified audit trail across all requests. */}
+        {audit.length > 0 && (
+          <>
+            <h2 className="mt-10 font-[family-name:var(--font-heading)] text-xl font-semibold text-ink">
+              Recent activity
+            </h2>
+            <p className="mt-1 text-sm text-ink-soft">
+              A chronological trail of significant actions across all requests.
+            </p>
+            <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-surface">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-line text-ink-soft">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">When</th>
+                    <th className="px-4 py-3 font-medium">Request</th>
+                    <th className="px-4 py-3 font-medium">Actor</th>
+                    <th className="px-4 py-3 font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {audit.map((e) => (
+                    <tr key={e.logId} className="border-b border-line last:border-0">
+                      <td className="whitespace-nowrap px-4 py-3 text-ink-soft">
+                        {new Date(e.loggedAt).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => router.push(`/requests/${e.requestId}`)}
+                          className="text-kq-red hover:underline"
+                        >
+                          #{e.requestId}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-ink-soft">
+                        {e.actorName ?? "System"}
+                      </td>
+                      <td className="px-4 py-3 text-ink">{e.action}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </>
         )}

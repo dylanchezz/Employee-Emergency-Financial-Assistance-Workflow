@@ -45,6 +45,7 @@ public class EscalationWorker : BackgroundService
         var requests = scope.ServiceProvider.GetRequiredService<IWelfareRequestRepository>();
         var claims = scope.ServiceProvider.GetRequiredService<IClaimRepository>();
         var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
+        var audit = scope.ServiceProvider.GetRequiredService<IAuditRepository>();
 
         var now = DateTime.UtcNow;
 
@@ -75,6 +76,8 @@ public class EscalationWorker : BackgroundService
                 _logger.LogInformation(
                     "Request {Id} horizontally released from officer {Officer} at tier {Tier}.",
                     r.RequestId, slowOfficerId, r.CurrentTier);
+                await audit.LogAsync(r.RequestId, null,
+                    $"Escalation: released from the assigned officer to tier {r.CurrentTier} peers (not actioned in time).");
             }
             else if (r.CurrentTier >= 4)
             {
@@ -87,6 +90,8 @@ public class EscalationWorker : BackgroundService
                     responsibleOfficerId: r.ClaimedBy);
                 await notifications.OnEscalatedNotifyEmployeeAsync(r.RequestId, r.UserId, wentUpATier: false);
                 _logger.LogInformation("Request {Id} escalated at HR tier → admin alerted.", r.RequestId);
+                await audit.LogAsync(r.RequestId, null,
+                    "Escalation: awaiting HR beyond the response window — flagged to administrators.");
             }
             else
             {
@@ -110,6 +115,8 @@ public class EscalationWorker : BackgroundService
                 await notifications.OnEscalatedNotifyEmployeeAsync(r.RequestId, r.UserId, wentUpATier: true);
                 _logger.LogInformation(
                     "Request {Id} escalated UP from tier {From} to {To}.", r.RequestId, leftTier, newTier);
+                await audit.LogAsync(r.RequestId, null,
+                    $"Escalation: advanced from tier {leftTier} to tier {newTier} (not actioned in time).");
             }
         }
 
@@ -122,6 +129,8 @@ public class EscalationWorker : BackgroundService
                 r.RequestId, r.UserId, "Reject", "Rejected", r.CurrentTier,
                 "No clarification was provided within the allowed period.");
             _logger.LogInformation("Request {Id} auto-rejected (clarification timeout).", r.RequestId);
+            await audit.LogAsync(r.RequestId, null,
+                "Auto-rejected: no clarification was provided within the allowed period.");
         }
 
         // 3. Deferred requests past the deferred window → alert admins (name the officer who deferred).
@@ -134,10 +143,12 @@ public class EscalationWorker : BackgroundService
                 r.RequestId,
                 $"Request #{r.RequestId} has been deferred at Finance beyond the allowed period and needs attention.",
                 responsibleOfficerId: r.ClaimedBy);
-                                if (r.ClaimedBy is not null)                                                             // NEW
+            if (r.ClaimedBy is not null)                                                             // NEW
                 await notifications.OnSlowOfficerAsync(r.RequestId, r.ClaimedBy.Value, wentUpATier: false);
                 await notifications.OnEscalatedNotifyEmployeeAsync(r.RequestId, r.UserId, wentUpATier: false);
             _logger.LogInformation("Request {Id} deferred too long → admin alerted.", r.RequestId);
+            await audit.LogAsync(r.RequestId, null,
+                "Deferred beyond the allowed period — flagged to administrators.");
         }
     }
 }

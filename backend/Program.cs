@@ -47,6 +47,7 @@ builder.Services.AddScoped<IClaimRepository, ClaimRepository>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddHostedService<EscalationWorker>();
+builder.Services.AddScoped<IAuditRepository, AuditRepository>();
 
 //Typed HttpClient for FastAPI model service
 var mlBaseUrl = builder.Configuration["MlService:BaseUrl"]

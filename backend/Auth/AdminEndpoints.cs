@@ -69,6 +69,12 @@ public static class AdminEndpoints
             var items = await requests.GetNeedingAdminAttentionAsync(DateTime.UtcNow, deferredCutoff);
             return Results.Ok(items);
         });
+        // Recent audit entries across all requests (newest first), for the admin activity view.
+        group.MapGet("/audit", async (IAuditRepository audit) =>
+        {
+            var entries = await audit.GetRecentAsync(100);
+            return Results.Ok(entries);
+        });
 
         // List all users (no password hashes) for the management table.
         group.MapGet("/users", async (IUserRepository users) =>
