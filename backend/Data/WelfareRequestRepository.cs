@@ -10,11 +10,12 @@ public interface IWelfareRequestRepository
     Task<WelfareRequest?> GetByIdAsync(int requestId);
     Task<int> CountByUserAsync(int userId);
     Task<int> CountByUserSinceAsync(int userId, DateTime since);
-    Task<bool> HasRecentSimilarAsync(int userId, string category, DateTime since);
-    Task<int> CountNonRejectedByUserSinceAsync(int userId, DateTime since);
+    Task<bool> HasRecentSimilarAsync(int userId, string category, DateTime since, int? excludeRequestId = null);
+    Task<int> CountNonRejectedByUserSinceAsync(int userId, DateTime since, int? excludeRequestId = null);
     Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier, int approverId);
     Task UpdateStatusAndTierAsync(int requestId, string status, int currentTier);
     Task<IEnumerable<QueueItemDto>> GetByUserAsync(int userId);
+    Task UpdateEditableFieldsAsync(WelfareRequest request);
     Task SetDeferReasonAsync(int requestId, string reason);
     Task<IEnumerable<WelfareRequest>> GetOverdueInReviewAsync(DateTime cutoffUtc);
     Task<IEnumerable<WelfareRequest>> GetOverdueReturnedAsync(DateTime cutoffUtc);
@@ -92,33 +93,42 @@ public class WelfareRequestRepository : IWelfareRequestRepository
         return await connection.ExecuteScalarAsync<int>(
             sql, new { UserId = userId, Since = since });
     }
-
-    public async Task<bool> HasRecentSimilarAsync(int userId, string category, DateTime since)
+    public async Task<bool> HasRecentSimilarAsync(
+        int userId, string category, DateTime since, int? excludeRequestId = null)
     {
+        // The duplicate rule looks for ANOTHER non-rejected same-category request in the
+        // window. On a resubmit we pass the request's own id so it isn't compared against
+        // itself (an edited clarification is not a duplicate of itself). On a fresh submit
+        // excludeRequestId is null and the extra condition is a no-op.
         const string sql = @"
             SELECT COUNT(*) FROM welfare_requests
             WHERE user_id = @UserId
               AND category = @Category
               AND status <> 'Rejected'
-              AND created_at >= @Since;";
+              AND created_at >= @Since
+              AND (@ExcludeRequestId IS NULL OR request_id <> @ExcludeRequestId);";
 
         using var connection = _factory.CreateConnection();
         var count = await connection.ExecuteScalarAsync<int>(
-            sql, new { UserId = userId, Category = category, Since = since });
+            sql, new { UserId = userId, Category = category, Since = since, ExcludeRequestId = excludeRequestId });
         return count > 0;
     }
 
-    public async Task<int> CountNonRejectedByUserSinceAsync(int userId, DateTime since)
+    public async Task<int> CountNonRejectedByUserSinceAsync(
+        int userId, DateTime since, int? excludeRequestId = null)
     {
+        // Annual-limit count. On a resubmit, exclude the request's own row so correcting an
+        // existing request doesn't count against the user's yearly cap a second time.
         const string sql = @"
             SELECT COUNT(*) FROM welfare_requests
             WHERE user_id = @UserId
               AND status <> 'Rejected'
-              AND created_at >= @Since;";
+              AND created_at >= @Since
+              AND (@ExcludeRequestId IS NULL OR request_id <> @ExcludeRequestId);";
 
         using var connection = _factory.CreateConnection();
         return await connection.ExecuteScalarAsync<int>(
-            sql, new { UserId = userId, Since = since });
+            sql, new { UserId = userId, Since = since, ExcludeRequestId = excludeRequestId });
     }
 
     public async Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier, int approverId)
@@ -143,7 +153,11 @@ public class WelfareRequestRepository : IWelfareRequestRepository
                        AND ce.action = 'claim')  AS MyClaimCount
             FROM welfare_requests r
             JOIN users u ON u.user_id = r.user_id
-            LEFT JOIN priority_predictions p ON p.request_id = r.request_id
+            LEFT JOIN (
+                SELECT DISTINCT ON (request_id) request_id, priority_level
+                FROM priority_predictions
+                ORDER BY request_id, predicted_at DESC
+            ) p ON p.request_id = r.request_id
             WHERE r.current_tier = @Tier
               AND (
                     r.status = 'In Review'
@@ -176,6 +190,36 @@ public class WelfareRequestRepository : IWelfareRequestRepository
         await connection.ExecuteAsync(
             sql, new { RequestId = requestId, Status = status, CurrentTier = currentTier });
     }
+
+    // Apply an employee's edits when they resubmit a Returned request. Only the fields
+    // the employee can change (and the has_documents flag, re-derived from any new upload)
+    // are written here — the same request_id and its history are preserved. Status/tier are
+    // set separately by the resubmit flow after re-validation + re-classification. Bumping
+    // updated_at resets the escalation clock so the fresh review cycle starts its timer now.
+    public async Task UpdateEditableFieldsAsync(WelfareRequest request)
+    {
+        const string sql = @"
+            UPDATE welfare_requests
+            SET category      = @Category,
+                amount        = @Amount,
+                description   = @Description,
+                has_documents = @HasDocuments,
+                validation_note = @ValidationNote,
+                updated_at    = CURRENT_TIMESTAMP
+            WHERE request_id = @RequestId;";
+
+        using var connection = _factory.CreateConnection();
+        await connection.ExecuteAsync(sql, new
+        {
+            request.RequestId,
+            request.Category,
+            request.Amount,
+            request.Description,
+            request.HasDocuments,
+            request.ValidationNote,
+        });
+    }
+
     public async Task<IEnumerable<QueueItemDto>> GetByUserAsync(int userId)
     {
                 const string sql = @"
@@ -190,7 +234,11 @@ public class WelfareRequestRepository : IWelfareRequestRepository
                    r.created_at        AS CreatedAt
             FROM welfare_requests r
             JOIN users u ON u.user_id = r.user_id
-            LEFT JOIN priority_predictions p ON p.request_id = r.request_id
+            LEFT JOIN (
+                SELECT DISTINCT ON (request_id) request_id, priority_level
+                FROM priority_predictions
+                ORDER BY request_id, predicted_at DESC
+            ) p ON p.request_id = r.request_id
             WHERE r.user_id = @UserId
             ORDER BY r.created_at DESC;";
 

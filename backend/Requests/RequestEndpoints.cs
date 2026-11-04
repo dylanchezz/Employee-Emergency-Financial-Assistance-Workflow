@@ -186,6 +186,216 @@ public static class RequestEndpoints
         .RequireAuthorization()
         .DisableAntiforgery();
 
+        // Resubmit a RETURNED request after the employee has clarified/edited it.
+        // Same request_id (history preserved): we update the editable fields, re-run
+        // Feature 3 validation and — if it passes — Feature 4 classification, then put the
+        // request back In Review at the tier that returned it. Owner-only, Returned-only.
+        group.MapPost("/{id:int}/resubmit", async (
+            int id,
+            HttpRequest httpRequest,
+            ClaimsPrincipal principal,
+            IWelfareRequestRepository requests,
+            IApprovalRepository approvals,
+            IUserRepository users,
+            IValidationService validation,
+            IModelService modelService,
+            IPriorityPredictionRepository predictions,
+            IDocumentRepository documents,
+            IClaimRepository claims,
+            INotificationService notifications) =>
+        {
+            // Identify the caller from the token.
+            var userIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userIdClaim is null || !int.TryParse(userIdClaim, out var userId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var request = await requests.GetByIdAsync(id);
+            if (request is null)
+            {
+                return Results.NotFound(new { error = "Request not found." });
+            }
+
+            // Only the owning employee may resubmit, and only a Returned request.
+            if (request.UserId != userId)
+            {
+                return Results.Forbid();
+            }
+            if (request.Status != "Returned")
+            {
+                return Results.BadRequest(new { error = "Only a returned request can be resubmitted." });
+            }
+
+            if (!httpRequest.HasFormContentType)
+            {
+                return Results.BadRequest(new { error = "Expected multipart form data." });
+            }
+            var form = await httpRequest.ReadFormAsync();
+
+            // On resubmit the whole request is editable: amount, description, category, and
+            // the document. (The returning tier still comes from history, so changing the
+            // category doesn't change where the request goes back to.)
+            var category = form["category"].ToString();
+            var description = form["description"].ToString();
+            decimal.TryParse(form["amount"], out var amount);
+            if (string.IsNullOrWhiteSpace(category) || amount <= 0)
+            {
+                return Results.BadRequest(new { error = "Category and a positive amount are required." });
+            }
+
+            // Validate any newly attached file BEFORE changing anything.
+            var file = form.Files.GetFile("document");
+            byte[]? fileBytes = null;
+            string? fileContentType = null;
+            string? fileName = null;
+
+            if (file is not null && file.Length > 0)
+            {
+                const long maxBytes = 5 * 1024 * 1024; // 5 MB cap
+                if (file.Length > maxBytes)
+                {
+                    return Results.BadRequest(new { error = "File must be 5 MB or smaller." });
+                }
+
+                using var ms = new MemoryStream();
+                await file.CopyToAsync(ms);
+                fileBytes = ms.ToArray();
+
+                fileContentType = SniffAllowedContentType(fileBytes);
+                if (fileContentType is null)
+                {
+                    return Results.BadRequest(new { error = "Only PDF, JPEG, or PNG files are allowed." });
+                }
+                fileName = Path.GetFileName(file.FileName);
+            }
+
+            // Apply the edits to the in-memory request. has_documents becomes true if a new
+            // file was attached now, OR the request already had a document from before.
+            request.Category = category;
+            request.Amount = amount;
+            request.Description = string.IsNullOrWhiteSpace(description) ? null : description;
+            var hadDocumentBefore = (request.HasDocuments ?? 0) == 1;
+            request.HasDocuments = (fileBytes is not null || hadDocumentBefore) ? 1 : 0;
+
+            // Feature 3: re-run validation on the edited request. Pass this request's id so
+            // validation excludes it from its own duplicate / annual-limit checks — an edited
+            // clarification is not a duplicate of itself.
+            var validationResult = await validation.ValidateAsync(request, excludeRequestId: id);
+            request.ValidationNote = validationResult.Note;
+
+            // Persist the edited fields + validation note (same request_id, history kept).
+            await requests.UpdateEditableFieldsAsync(request);
+
+            // If a new file was attached, store it against the request (best-effort).
+            if (fileBytes is not null)
+            {
+                try
+                {
+                    await documents.CreateAsync(new Document
+                    {
+                        RequestId = id,
+                        FileName = fileName ?? "document",
+                        ContentType = fileContentType!,
+                        FileBytes = fileBytes,
+                    });
+                }
+                catch
+                {
+                    // The resubmission stands; the document simply wasn't saved.
+                }
+            }
+
+            // Validation failed again → the request stops here (Rejected/Returned), same as
+            // a fresh submission. Notify the employee and do not re-enter the queue.
+            if (validationResult.Outcome != ValidationOutcome.Validated)
+            {
+                await requests.UpdateStatusAndTierAsync(id, validationResult.Status, 0);
+                await notifications.OnSubmissionOutcomeAsync(
+                    id, userId, validationResult.Status, request.ValidationNote);
+                return Results.Ok(new
+                {
+                    requestId = id,
+                    status = validationResult.Status,
+                    note = request.ValidationNote,
+                });
+            }
+
+            // Validation passed → re-classify (Feature 4). Keep the old prediction: migration
+            // 008 dropped the UNIQUE on request_id, so this INSERT adds a NEW prediction row
+            // and the detail endpoint reads the latest. History shows "was X -> now Y".
+            string? priority = null;
+            var predictRequest = new PredictRequest
+            {
+                RequestCategory = request.Category,
+                RequestedAmount = request.Amount,
+                Salary = request.Salary ?? 0,
+                EmploymentDurationMonths = request.EmploymentDurationMonths ?? 0,
+                PreviousRequests = request.PreviousRequests ?? 0,
+                RequestFrequency = request.RequestFrequency ?? 0,
+                HasDocuments = request.HasDocuments ?? 0,
+            };
+            var prediction = await modelService.PredictAsync(predictRequest);
+            if (prediction is not null)
+            {
+                priority = prediction.Priority;
+                await predictions.CreateAsync(new PriorityPrediction
+                {
+                    RequestId = id,
+                    PriorityLevel = prediction.Priority,
+                    Explanation = JsonSerializer.Serialize(prediction.Explanation),
+                });
+            }
+
+            // Re-enter at the tier that returned it (design choice). If somehow there's no
+            // Returned record, fall back to tier 1 (full re-review).
+            var returningTier = await approvals.GetReturningTierAsync(id) ?? 1;
+
+            // Clear any stale claim first — a resubmit starts a fresh review cycle.
+            if (request.ClaimedBy is not null)
+            {
+                await claims.ReleaseAsync(id, request.ClaimedBy.Value);
+            }
+
+            // Prefer to send it back to the SAME approver who returned it (they asked for the
+            // clarification). Only if they still staff that tier can we pre-assign to them;
+            // otherwise it falls back to the shared tier pool so it's never stuck.
+            var returningApprover = await approvals.GetReturningApproverAsync(id);
+            int? preAssignedTo = null;
+            if (returningApprover is not null)
+            {
+                var approverRole = await users.GetRoleByIdAsync(returningApprover.Value);
+                if (approverRole is not null && TierForRole(approverRole) == returningTier)
+                {
+                    preAssignedTo = returningApprover;
+                }
+            }
+
+            // Set status/tier (bumps updated_at → resets the escalation clock for this cycle).
+            await requests.UpdateStatusAndTierAsync(id, "In Review", returningTier);
+
+            // If the original approver is still eligible, pre-claim it to them (no claim event,
+            // so it doesn't count against their cap — they're continuing earlier work).
+            if (preAssignedTo is not null)
+            {
+                await claims.PreAssignAsync(id, preAssignedTo.Value);
+            }
+
+            // Notify. If pre-assigned, tell that one officer; otherwise tell the whole tier.
+            await notifications.OnResubmittedAsync(id, userId, returningTier, preAssignedTo);
+
+            return Results.Ok(new
+            {
+                requestId = id,
+                status = "In Review",
+                currentTier = returningTier,
+                priority,
+            });
+        })
+        .RequireAuthorization()
+        .DisableAntiforgery();
+
         // The approver's queue: unclaimed (or self-held) requests at their tier, priority-ordered.
         group.MapGet("/queue", async (
             ClaimsPrincipal principal,
@@ -241,6 +451,8 @@ public static class RequestEndpoints
             var requesterName = await users.GetNameByIdAsync(request.UserId) ?? "Unknown";
             var prediction = await predictions.GetByRequestIdAsync(id);
             var history = await approvals.GetHistoryForRequestAsync(id);
+            //Prediction Trail
+            var predictionTrail = await predictions.GetAllByRequestIdAsync(id);
 
             var detail = new RequestDetailDto
             {
@@ -259,6 +471,13 @@ public static class RequestEndpoints
                 Explanation = prediction?.Explanation,
                 ClaimedBy = request.ClaimedBy,
                 Approvals = history.ToList(),
+                PredictionHistory = predictionTrail
+                    .Select(p => new PredictionHistoryItem
+                    {
+                        PriorityLevel = p.PriorityLevel,
+                        PredictedAt = p.PredictedAt,
+                    })
+                    .ToList(),
             };
             return Results.Ok(detail);
         })

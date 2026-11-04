@@ -24,6 +24,11 @@ public class RequestDetailDto
     // Approval history (empty until any approver has acted).
     public List<ApprovalHistoryItem> Approvals { get; set; } = new();
     public int? ClaimedBy { get; set; }
+
+    // Prediction history, newest first — more than one row once the request has been
+    // resubmitted (so the UI can show "was Low -> now Medium"). PriorityLevel/Explanation
+    // above are the current (latest) prediction; this is the full trail.
+    public List<PredictionHistoryItem> PredictionHistory { get; set; } = new();
 }
 
 public class ApprovalHistoryItem
@@ -33,4 +38,10 @@ public class ApprovalHistoryItem
     public string Decision { get; set; } = string.Empty;
     public string? Reason { get; set; }
     public DateTime DecidedAt { get; set; }
+}
+
+public class PredictionHistoryItem
+{
+    public string PriorityLevel { get; set; } = string.Empty;
+    public DateTime PredictedAt { get; set; }
 }

@@ -13,7 +13,12 @@ public interface INotificationService
     Task OnDecisionAsync(int requestId, int employeeId, string decision, string newStatus, int nextTier, string? reason);
 
     // Notify the employee when validation rejects/returns their request at submission.
-    Task OnSubmissionOutcomeAsync(int requestId, int employeeId, string status, string? note);
+        Task OnSubmissionOutcomeAsync(int requestId, int employeeId, string status, string? note);
+
+    // An employee edited and resubmitted a Returned request. It passed validation and is
+    // back In Review at the tier that returned it. Notify the employee it went through,
+    // and notify that tier's approvers that a clarified request is waiting.
+    Task OnResubmittedAsync(int requestId, int employeeId, int tier, int? assignedApproverId = null);
 
     // Alert all System Administrators about a request needing attention (HR overdue,
     // Notify the new tier's approvers that a request was escalated UP to them.
@@ -104,8 +109,35 @@ public class NotificationService : INotificationService
         await _notifications.CreateAsync(requestId, employeeId, message);
     }
 
+    public async Task OnResubmittedAsync(int requestId, int employeeId, int tier, int? assignedApproverId = null)
+    {
+        // 1. Tell the employee their clarified request is back in review.
+        await _notifications.CreateAsync(
+            requestId, employeeId,
+            $"Your request #{requestId} was resubmitted with your clarifications and is back under review.");
 
-            public async Task OnEscalatedToTierAsync(int requestId, int newTier)
+        // 2a. If it was pre-assigned back to the officer who returned it, tell just them.
+        if (assignedApproverId is not null)
+        {
+            await _notifications.CreateAsync(
+                requestId, assignedApproverId.Value,
+                $"Request #{requestId}, which you returned for clarification, has been resubmitted and is assigned to you to review.");
+            return;
+        }
+
+        // 2b. Otherwise it's back in the shared pool — tell every approver at that tier.
+        var role = RoleForTier(tier);
+        if (role is null) return;
+        var approverIds = await _users.GetIdsByRoleAsync(role);
+        foreach (var approverId in approverIds)
+        {
+            await _notifications.CreateAsync(
+                requestId, approverId,
+                $"Request #{requestId} was resubmitted with clarifications and is awaiting your review again.");
+        }
+    }
+
+    public async Task OnEscalatedToTierAsync(int requestId, int newTier)
     {
         var role = RoleForTier(newTier);
         if (role is null) return;

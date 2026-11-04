@@ -9,6 +9,7 @@ public interface IUserRepository
     Task<User?> GetByEmailAsync(string email);
     Task<int> CreateAsync(User user);
     Task<string?> GetNameByIdAsync(int userId);
+    Task<string?> GetRoleByIdAsync(int userId);
     Task<IEnumerable<int>> GetIdsByRoleAsync(string role);
     Task<(string Name, string Email)?> GetContactByIdAsync(int userId);
 }
@@ -48,6 +49,14 @@ public class UserRepository : IUserRepository
         public async Task<string?> GetNameByIdAsync(int userId)
     {
         const string sql = "SELECT name FROM users WHERE user_id = @UserId;";
+        using var connection = _factory.CreateConnection();
+        return await connection.QuerySingleOrDefaultAsync<string>(sql, new { UserId = userId });
+    }
+    // A user's current role — used to confirm the original approver still staffs the tier
+    // we want to send a resubmitted request back to.
+    public async Task<string?> GetRoleByIdAsync(int userId)
+    {
+        const string sql = "SELECT role FROM users WHERE user_id = @UserId;";
         using var connection = _factory.CreateConnection();
         return await connection.QuerySingleOrDefaultAsync<string>(sql, new { UserId = userId });
     }
