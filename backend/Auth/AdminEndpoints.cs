@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
 using backend.Data;
 using backend.Models;
+using backend.Requests;
 
 namespace backend.Auth;
 
@@ -68,6 +69,48 @@ public static class AdminEndpoints
             var deferredCutoff = now - backend.Requests.EscalationPolicy.DeferredTimeout;
             var items = await requests.GetNeedingAdminAttentionAsync(DateTime.UtcNow, deferredCutoff);
             return Results.Ok(items);
+        });
+                // Admin nudges the officer responsible for a stuck request (from the "Needs attention"
+        // list). Sends a reminder email to the claiming officer. Admin-gated (whole group).
+        group.MapPost("/attention/{id:int}/nudge", async (
+            int id,
+            ClaimsPrincipal principal,
+            IWelfareRequestRepository requests,
+            IUserRepository users,
+            IEmailService email,
+            IAuditRepository audit) =>
+        {
+            var request = await requests.GetByIdAsync(id);
+            if (request is null)
+            {
+                return Results.NotFound(new { error = "Request not found." });
+            }
+            if (request.ClaimedBy is null)
+            {
+                return Results.BadRequest(new { error = "No officer currently holds this request, so there is no one to remind." });
+            }
+
+            var contact = await users.GetContactByIdAsync(request.ClaimedBy.Value);
+            if (contact is null || string.IsNullOrWhiteSpace(contact.Value.Email))
+            {
+                return Results.BadRequest(new { error = "The responsible officer has no email on file." });
+            }
+
+            var body =
+                $"Reminder: request #{id} is awaiting your decision and has passed its response window. " +
+                "Please review and action it as soon as possible.";
+            var sent = await email.SendAsync(contact.Value.Email, $"Reminder: please action request #{id}", body);
+
+            // Record the nudge in the audit trail (the admin is the actor).
+            var adminIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            int.TryParse(adminIdClaim, out var adminId);
+            await audit.LogAsync(id, adminId == 0 ? null : adminId,
+                $"Admin sent a reminder email to {contact.Value.Name} about this stuck request.");
+
+            return sent
+                ? Results.Ok(new { message = $"Reminder sent to {contact.Value.Name} ({contact.Value.Email})." })
+                : Results.Ok(new { message = "Could not send the reminder email (email may be disabled or the server unreachable)." });
         });
         // Recent audit entries across all requests (newest first), for the admin activity view.
         group.MapGet("/audit", async (IAuditRepository audit) =>

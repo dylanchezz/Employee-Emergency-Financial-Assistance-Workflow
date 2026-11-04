@@ -802,6 +802,7 @@ public static class RequestEndpoints
                 decision: decision!,
                 newStatus: newStatus,
                 nextTier: newTier,
+                actingTier: approverTier.Value,
                 reason: dto.Reason);
 
             // Audit: record the decision (the actor is the approver who made it).

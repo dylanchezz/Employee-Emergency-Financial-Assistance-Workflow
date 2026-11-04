@@ -48,6 +48,8 @@ builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddHostedService<EscalationWorker>();
 builder.Services.AddScoped<IAuditRepository, AuditRepository>();
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
+builder.Services.AddScoped<IEmailService, EmailService>();
 
 //Typed HttpClient for FastAPI model service
 var mlBaseUrl = builder.Configuration["MlService:BaseUrl"]
