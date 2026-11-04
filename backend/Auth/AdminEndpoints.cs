@@ -58,6 +58,18 @@ public static class AdminEndpoints
             return Results.Ok(rules);
         });
 
+        // Requests currently needing admin follow-up: stuck at HR past the response window,
+        // or deferred too long. Same cutoffs as the escalation worker (one source of truth).
+        group.MapGet("/attention", async (IWelfareRequestRepository requests) =>
+        {
+            var now = DateTime.UtcNow;
+            // HR-stuck requests are identified by a recorded escalation (stable), not a live
+            // cutoff; only the deferred window is time-based here.
+            var deferredCutoff = now - backend.Requests.EscalationPolicy.DeferredTimeout;
+            var items = await requests.GetNeedingAdminAttentionAsync(DateTime.UtcNow, deferredCutoff);
+            return Results.Ok(items);
+        });
+
         // List all users (no password hashes) for the management table.
         group.MapGet("/users", async (IUserRepository users) =>
         {

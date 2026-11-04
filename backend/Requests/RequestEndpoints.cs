@@ -437,14 +437,15 @@ public static class RequestEndpoints
                 return Results.NotFound(new { error = "Request not found. "});
             }
         
-            //An Approver may view any request while an employee only views their own.
+            //An approver or an administrator may view any request; an employee only their own.
             var role = principal.FindFirstValue(ClaimTypes.Role);
             var viewerIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
                 ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
             int.TryParse(viewerIdClaim, out var viewerId);
             var isApprover = TierForRole(role) is not null;
+            var isAdmin = role == "System Administrator";
             var isOwner = request.UserId == viewerId;
-            if (!isApprover && !isOwner)
+            if (!isApprover && !isAdmin && !isOwner)
             {
                 return Results.Forbid();
             }

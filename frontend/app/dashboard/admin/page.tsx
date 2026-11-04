@@ -30,6 +30,18 @@ type ValidationRule = {
   effect: string;
 };
 
+type AttentionItem = {
+  requestId: number;
+  requesterName: string;
+  category: string;
+  amount: number;
+  status: string;
+  currentTier: number;
+  since: string;
+  officerName: string | null;
+  officerEmail: string | null;
+};
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -37,6 +49,7 @@ export default function AdminDashboard() {
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [rules, setRules] = useState<ValidationRule[]>([]);
+  const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -72,6 +85,10 @@ export default function AdminDashboard() {
     const result = await apiFetch<ValidationRule[]>("/admin/rules");
     if (result.ok) setRules(result.data);
   }
+    async function loadAttention() {
+    const result = await apiFetch<AttentionItem[]>("/admin/attention");
+    if (result.ok) setAttention(result.data);
+  }
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -83,6 +100,7 @@ export default function AdminDashboard() {
     setRole(localStorage.getItem("role") ?? "");
     loadUsers();
     loadRules();
+    loadAttention();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
@@ -165,6 +183,45 @@ export default function AdminDashboard() {
             </button>
           </div>
         </div>
+
+        {/* Needs attention — requests the escalation worker has flagged for admin follow-up. */}
+        {attention.length > 0 && (
+          <div className="mt-8">
+            <h2 className="font-[family-name:var(--font-heading)] text-xl font-semibold text-ink">
+              Needs your attention
+            </h2>
+            <p className="mt-1 text-sm text-ink-soft">
+              Requests stuck at HR beyond the response window, or deferred too long.
+            </p>
+            <div className="mt-4 space-y-3">
+              {attention.map((a) => (
+                <button
+                  key={a.requestId}
+                  onClick={() => router.push(`/requests/${a.requestId}`)}
+                  className="block w-full rounded-2xl border border-medium/50 bg-surface p-4 text-left transition hover:bg-canvas"
+                >
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="font-medium text-ink">
+                      Request #{a.requestId} · {a.requesterName}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-medium px-2.5 py-0.5 text-xs font-semibold text-white">
+                      {a.status}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-ink-soft">
+                    {a.category} · KES {a.amount.toLocaleString()} · waiting since{" "}
+                    {new Date(a.since).toLocaleString()}
+                  </p>
+                  <p className="mt-1 text-xs text-ink-soft">
+                    {a.officerName
+                      ? `Responsible officer: ${a.officerName}${a.officerEmail ? ` (${a.officerEmail})` : ""}`
+                      : "Unclaimed in the HR queue — no officer has taken it."}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="mt-8 flex items-center justify-between">
           <h2 className="font-[family-name:var(--font-heading)] text-xl font-semibold text-ink">
