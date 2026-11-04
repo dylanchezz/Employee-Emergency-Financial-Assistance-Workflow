@@ -102,13 +102,15 @@ CREATE TABLE claim_events (
 
 CREATE TABLE priority_predictions (
     prediction_id  SERIAL PRIMARY KEY,
-    request_id     INTEGER NOT NULL UNIQUE
+    request_id     INTEGER NOT NULL
                    REFERENCES welfare_requests(request_id) ON DELETE CASCADE,
     priority_level VARCHAR(10) NOT NULL
                    CHECK (priority_level IN ('Low', 'Medium', 'High')),
     explanation    JSONB,
     predicted_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_priority_predictions_request_id
+    ON priority_predictions (request_id);
 
 
 -- documents

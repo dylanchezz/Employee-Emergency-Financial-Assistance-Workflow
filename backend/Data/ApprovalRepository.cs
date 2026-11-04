@@ -9,7 +9,10 @@ public interface IApprovalRepository
     Task<int> CreateAsync(Approval approval);
     Task<IEnumerable<Approval>> GetByRequestIdAsync(int requestId);
     Task<IEnumerable<ApprovalHistoryItem>> GetHistoryForRequestAsync(int requestId);
-        Task<IEnumerable<QueueItemDto>> GetRequestsDecidedByAsync(int approverId);
+    Task<IEnumerable<QueueItemDto>> GetRequestsDecidedByAsync(int approverId);
+    Task<int?> GetReturningTierAsync(int requestId);
+    Task<int?> GetReturningApproverAsync(int requestId);
+
 }
 
 public class ApprovalRepository : IApprovalRepository
@@ -81,11 +84,52 @@ public class ApprovalRepository : IApprovalRepository
             FROM approvals a
             JOIN welfare_requests r ON r.request_id = a.request_id
             JOIN users u ON u.user_id = r.user_id
-            LEFT JOIN priority_predictions p ON p.request_id = r.request_id
+            LEFT JOIN (
+                SELECT DISTINCT ON (request_id) request_id, priority_level
+                FROM priority_predictions
+                ORDER BY request_id, predicted_at DESC
+            ) p ON p.request_id = r.request_id
             WHERE a.approver_id = @ApproverId
             ORDER BY r.request_id, r.created_at DESC;";
 
         using var connection = _factory.CreateConnection();
         return await connection.QueryAsync<QueueItemDto>(sql, new { ApproverId = approverId });
+    }
+
+    // The tier that most recently RETURNED this request. On resubmit the request
+    // re-enters the queue here (the design choice: "back to the tier that returned it"),
+    // rather than restarting from tier 1. Read from the audit trail — no extra state.
+    // Returns null if the request was never returned (then the caller falls back to tier 1).
+    public async Task<int?> GetReturningTierAsync(int requestId)
+    {
+        const string sql = @"
+            SELECT tier
+            FROM approvals
+            WHERE request_id = @RequestId
+              AND decision = 'Returned'
+            ORDER BY decided_at DESC
+            LIMIT 1;";
+
+        using var connection = _factory.CreateConnection();
+        return await connection.QuerySingleOrDefaultAsync<int?>(
+            sql, new { RequestId = requestId });
+    }
+    
+    // The approver who most recently RETURNED this request. On resubmit we pre-assign the
+    // request back to them (they asked for the clarification). Null if never returned, or if
+    // the row has no approver — then the caller falls back to the shared tier pool.
+    public async Task<int?> GetReturningApproverAsync(int requestId)
+    {
+        const string sql = @"
+            SELECT approver_id
+            FROM approvals
+            WHERE request_id = @RequestId
+              AND decision = 'Returned'
+            ORDER BY decided_at DESC
+            LIMIT 1;";
+
+        using var connection = _factory.CreateConnection();
+        return await connection.QuerySingleOrDefaultAsync<int?>(
+            sql, new { RequestId = requestId });
     }
 }

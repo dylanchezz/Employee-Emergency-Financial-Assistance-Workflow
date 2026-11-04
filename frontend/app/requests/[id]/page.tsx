@@ -4,6 +4,23 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 
+// The same categories the new-request form offers, so a resubmit can change category too.
+const RESUBMIT_CATEGORIES = [
+  "Medical Emergency",
+  "Bereavement",
+  "Hardship/Emergency Assistance",
+  "Education Support",
+];
+// Description drafts per category — the same ones the new-request form offers. On resubmit,
+// switching category offers the matching draft, but only while the box is empty or still
+// holds an unedited draft; the employee's own text is never overwritten.
+const RESUBMIT_DESCRIPTION_TEMPLATES: Record<string, string> = {
+  "Medical Emergency": "Requesting assistance with medical expenses for ",
+  Bereavement: "Requesting bereavement assistance following the passing of ",
+  "Hardship/Emergency Assistance": "Requesting emergency assistance due to ",
+  "Education Support": "Requesting education support for ",
+};
+
 type ShapFactor = { feature: string; impact: number };
 type ApprovalItem = {
   tier: number;
@@ -11,6 +28,10 @@ type ApprovalItem = {
   decision: string;
   reason: string | null;
   decidedAt: string;
+};
+type PredictionHistoryItem = {
+  priorityLevel: string;
+  predictedAt: string;
 };
 type RequestDetail = {
   requestId: number;
@@ -28,6 +49,7 @@ type RequestDetail = {
   priorityLevel: string | null;
   explanation: string | null;   // JSON string of ShapFactor[]
   approvals: ApprovalItem[];
+  predictionHistory: PredictionHistoryItem[];
 };
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -117,6 +139,16 @@ export default function RequestDetailPage() {
   const [message, setMessage] = useState("");
   const [docError, setDocError] = useState("");
 
+  // Edit & resubmit (owner, Returned request) state.
+  const [editing, setEditing] = useState(false);
+  const [editCategory, setEditCategory] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editDescIsTemplate, setEditDescIsTemplate] = useState(false);
+  const [editFile, setEditFile] = useState<File | null>(null);
+  const [resubmitting, setResubmitting] = useState(false);
+  const [resubmitMsg, setResubmitMsg] = useState("");
+
   const myId = currentUserId();
 
   async function load() {
@@ -191,6 +223,72 @@ export default function RequestDetailPage() {
     setMessage(`Decision recorded: ${result.data.status}.`);
     setReason("");
     load(); // refresh the detail (status/claim/history will have changed)
+  }
+
+  // Open the edit form, prefilled with the request's current values.
+  function openEditor() {
+    if (!detail) return;
+    setEditCategory(detail.category);
+    setEditAmount(String(detail.amount));
+    setEditDescription(detail.description ?? "");
+    // The current description is the employee's own earlier text, not a draft — so it's
+    // protected from being replaced when they change category. Only an empty box is free.
+    setEditDescIsTemplate((detail.description ?? "").trim() === "");
+    setEditFile(null);
+    setResubmitMsg("");
+    setEditing(true);
+  }
+  // Changing category on resubmit offers the matching description draft — but only while
+  // the box is empty or still holds an unedited draft, so the employee's words are kept.
+  function handleEditCategoryChange(next: string) {
+    setEditCategory(next);
+    if (
+      (editDescription.trim() === "" || editDescIsTemplate) &&
+      RESUBMIT_DESCRIPTION_TEMPLATES[next]
+    ) {
+      setEditDescription(RESUBMIT_DESCRIPTION_TEMPLATES[next]);
+      setEditDescIsTemplate(true);
+    }
+  }
+
+  // Submit the employee's clarifications. Sends multipart (so a new document can ride
+  // along), hits the resubmit endpoint, which re-validates + re-classifies and puts the
+  // request back In Review at the tier that returned it.
+  async function resubmit() {
+    setResubmitMsg("");
+    const amt = Number(editAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setResubmitMsg("Enter a valid amount greater than zero.");
+      return;
+    }
+    if (!editCategory) {
+      setResubmitMsg("Please choose a category.");
+      return;
+    }
+    const form = new FormData();
+    form.append("category", editCategory);
+    form.append("amount", String(amt));
+    form.append("description", editDescription.trim());
+    if (editFile) form.append("document", editFile);
+
+    setResubmitting(true);
+    const result = await apiFetch<{ status: string; currentTier: number }>(
+      `/requests/${id}/resubmit`,
+      { method: "POST", body: form }
+    );
+    setResubmitting(false);
+
+    if (!result.ok) {
+      setResubmitMsg(result.error);
+      return;
+    }
+    setEditing(false);
+    setResubmitMsg(
+      result.data.status === "In Review"
+        ? "Resubmitted — your request is back under review."
+        : `Resubmitted, but it was ${result.data.status.toLowerCase()} again on the rules. See the note.`
+    );
+    load(); // status / prediction / history will have changed
   }
 
   // The document endpoint is JWT-protected, so we can't use a plain <a href> (a browser
@@ -280,6 +378,11 @@ export default function RequestDetailPage() {
   const canClaim = atMyTier && detail?.claimedBy == null;
   const isFinance = role === "Finance Officer";
 
+  // The owner may edit & resubmit their OWN request only while it is Returned.
+  // (The detail endpoint is owner-or-approver; a non-approver who can see it is the owner.)
+  const canResubmit =
+    detail != null && !isApprover && detail.status === "Returned";
+
   return (
     <main className="min-h-screen px-6 py-10">
       <div className="mx-auto w-full max-w-2xl">
@@ -367,6 +470,19 @@ export default function RequestDetailPage() {
               </p>
             )}
 
+            {/* Priority history — shown once the request has been resubmitted and
+                re-classified (more than one prediction). Newest first from the backend. */}
+            {detail.predictionHistory && detail.predictionHistory.length > 1 && (
+              <p className="mt-2 text-xs text-ink-soft">
+                Priority history:{" "}
+                {detail.predictionHistory
+                  .map((p) => p.priorityLevel)
+                  .reverse()
+                  .join(" → ")}{" "}
+                (updated after resubmission)
+              </p>
+            )}
+
             {described.length > 0 ? (
               <div className="mt-4 rounded-2xl border border-line bg-surface p-6">
                 <div className="flex items-center justify-between text-xs text-ink-soft">
@@ -425,6 +541,99 @@ export default function RequestDetailPage() {
                   ))}
                 </div>
               </>
+            )}
+
+            {/* Edit & resubmit — owner only, while the request is Returned. */}
+            {canResubmit && (
+              <div className="mt-8 rounded-2xl border border-medium/40 bg-surface p-6">
+                <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
+                  This request was returned for clarification
+                </h2>
+                <p className="mt-1 text-sm text-ink-soft">
+                  {detail.validationNote ??
+                    detail.approvals.find((a) => a.decision === "Returned")?.reason ??
+                    "Please review the comments above, make your changes, and resubmit."}
+                </p>
+
+                {!editing ? (
+                  <button
+                    onClick={openEditor}
+                    className="mt-4 rounded-lg bg-kq-red px-4 py-2 text-sm font-medium text-white transition hover:bg-kq-red-deep"
+                  >
+                    Edit &amp; resubmit
+                  </button>
+                ) : (
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <label className="block text-sm text-ink-soft">Category</label>
+                      <select
+                        value={editCategory}
+                        onChange={(e) => handleEditCategoryChange(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                      >
+                        <option value="">Select a category…</option>
+                        {RESUBMIT_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-ink-soft">Amount (KES)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={editAmount}
+                        onChange={(e) => setEditAmount(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-ink-soft">Description</label>
+                      <textarea
+                        rows={3}
+                        value={editDescription}
+                        onChange={(e) => {
+                          setEditDescription(e.target.value);
+                          setEditDescIsTemplate(false);
+                        }}
+                        className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                        placeholder="Explain or clarify your request…"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-ink-soft">
+                        Supporting document (optional — replaces any existing one)
+                      </label>
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
+                        className="mt-1 block w-full text-sm text-ink-soft file:mr-3 file:rounded-lg file:border-0 file:bg-canvas file:px-3 file:py-2 file:text-sm file:text-ink"
+                      />
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={resubmit}
+                        disabled={resubmitting}
+                        className="rounded-lg bg-kq-red px-4 py-2 text-sm font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60"
+                      >
+                        {resubmitting ? "Resubmitting…" : "Resubmit"}
+                      </button>
+                      <button
+                        onClick={() => setEditing(false)}
+                        disabled={resubmitting}
+                        className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas disabled:opacity-60"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {resubmitMsg && <p className="mt-3 text-sm text-ink">{resubmitMsg}</p>}
+              </div>
             )}
 
             {/* Claim / decision area — only for an approver whose tier this request is at. */}

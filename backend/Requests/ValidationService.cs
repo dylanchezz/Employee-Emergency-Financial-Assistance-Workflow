@@ -5,7 +5,7 @@ namespace backend.Requests;
 
 public interface IValidationService
 {
-    Task<ValidationResult> ValidateAsync(WelfareRequest request);
+    Task<ValidationResult> ValidateAsync(WelfareRequest request, int? excludeRequestId = null);
 }
 
 public class ValidationService : IValidationService
@@ -23,13 +23,14 @@ public class ValidationService : IValidationService
         _requests = requests;
     }
 
-    public async Task<ValidationResult> ValidateAsync(WelfareRequest request)
+    public async Task<ValidationResult> ValidateAsync(WelfareRequest request, int? excludeRequestId = null)
     {
         // Hard blocks first (stop the flow, skip the model).
 
         // Rule 3: annual limit — at most 3 non-rejected requests per 12 months.
         var oneYearAgo = DateTime.UtcNow.AddYears(-1);
-        var yearCount = await _requests.CountNonRejectedByUserSinceAsync(request.UserId, oneYearAgo);
+        var yearCount = await _requests.CountNonRejectedByUserSinceAsync(
+            request.UserId, oneYearAgo, excludeRequestId);
         if (yearCount >= MaxRequestsPerYear)
         {
             return new ValidationResult(
@@ -41,7 +42,7 @@ public class ValidationService : IValidationService
         // Rule 4: duplicate — a non-rejected same-category request within 21 days.
         var windowStart = DateTime.UtcNow.AddDays(-DuplicateWindowDays);
         var hasDuplicate = await _requests.HasRecentSimilarAsync(
-            request.UserId, request.Category, windowStart);
+            request.UserId, request.Category, windowStart, excludeRequestId);
         if (hasDuplicate)
         {
             return new ValidationResult(

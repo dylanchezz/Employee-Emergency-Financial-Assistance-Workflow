@@ -9,6 +9,7 @@ public interface IClaimRepository
     Task<int> CountClaimsByApproverAsync(int requestId, int approverId);
     // Record a claim/release action and set/clear claimed_by in one transaction.
     Task ClaimAsync(int requestId, int approverId);
+    Task PreAssignAsync(int requestId, int approverId);
     Task ReleaseAsync(int requestId, int approverId);
     // How many times this request has been force-released by the escalation worker at a tier.
     Task<int> CountEscalateReleasesAsync(int requestId);
@@ -51,6 +52,17 @@ public class ClaimRepository : IClaimRepository
             INSERT INTO claim_events (request_id, approver_id, action)
             VALUES (@RequestId, @ApproverId, 'claim');";
 
+        using var connection = _factory.CreateConnection();
+        await connection.ExecuteAsync(sql, new { RequestId = requestId, ApproverId = approverId });
+    }
+    // Pre-assign a request to an approver WITHOUT logging a claim event. Used when a
+    // resubmitted request goes back to the officer who returned it: they're continuing
+    // earlier work, so it shouldn't count against their per-request claim cap. They can
+    // act on it immediately (claimed_by is set) or release it like any claim.
+    public async Task PreAssignAsync(int requestId, int approverId)
+    {
+        const string sql = @"
+            UPDATE welfare_requests SET claimed_by = @ApproverId WHERE request_id = @RequestId;";
         using var connection = _factory.CreateConnection();
         await connection.ExecuteAsync(sql, new { RequestId = requestId, ApproverId = approverId });
     }
