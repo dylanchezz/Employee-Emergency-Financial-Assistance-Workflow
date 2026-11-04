@@ -58,6 +58,8 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [rules, setRules] = useState<ValidationRule[]>([]);
   const [attention, setAttention] = useState<AttentionItem[]>([]);
+  const [nudgeMsg, setNudgeMsg] = useState<Record<number, string>>({});
+  const [nudgingId, setNudgingId] = useState<number | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -97,6 +99,19 @@ export default function AdminDashboard() {
     async function loadAttention() {
     const result = await apiFetch<AttentionItem[]>("/admin/attention");
     if (result.ok) setAttention(result.data);
+  }
+    async function nudge(requestId: number) {
+    setNudgingId(requestId);
+    setNudgeMsg((m) => ({ ...m, [requestId]: "" }));
+    const result = await apiFetch<{ message: string }>(
+      `/admin/attention/${requestId}/nudge`,
+      { method: "POST" }
+    );
+    setNudgingId(null);
+    setNudgeMsg((m) => ({
+      ...m,
+      [requestId]: result.ok ? result.data.message : result.error,
+    }));
   }
     async function loadAudit() {
     const result = await apiFetch<AuditEntry[]>("/admin/audit");
@@ -209,10 +224,15 @@ export default function AdminDashboard() {
             </p>
             <div className="mt-4 space-y-3">
               {attention.map((a) => (
-                <button
+                <div
                   key={a.requestId}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => router.push(`/requests/${a.requestId}`)}
-                  className="block w-full rounded-2xl border border-medium/50 bg-surface p-4 text-left transition hover:bg-canvas"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") router.push(`/requests/${a.requestId}`);
+                  }}
+                  className="block w-full cursor-pointer rounded-2xl border border-medium/50 bg-surface p-4 text-left transition hover:bg-canvas"
                 >
                   <div className="flex items-baseline justify-between gap-4">
                     <span className="font-medium text-ink">
@@ -231,7 +251,26 @@ export default function AdminDashboard() {
                       ? `Responsible officer: ${a.officerName}${a.officerEmail ? ` (${a.officerEmail})` : ""}`
                       : "Unclaimed in the HR queue — no officer has taken it."}
                   </p>
-                </button>
+                  {a.officerName && (
+                    <div
+                      className="mt-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        onClick={() => nudge(a.requestId)}
+                        disabled={nudgingId === a.requestId}
+                        className="rounded-lg border border-kq-red px-3 py-1.5 text-xs font-medium text-kq-red transition hover:bg-kq-red hover:text-white disabled:opacity-60"
+                      >
+                        {nudgingId === a.requestId ? "Sending…" : "Send reminder email"}
+                      </button>
+                      {nudgeMsg[a.requestId] && (
+                        <span className="ml-2 text-xs text-ink-soft">
+                          {nudgeMsg[a.requestId]}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </div>

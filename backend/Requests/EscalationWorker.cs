@@ -126,7 +126,7 @@ public class EscalationWorker : BackgroundService
         {
             await requests.UpdateStatusAndTierAsync(r.RequestId, "Rejected", r.CurrentTier);
             await notifications.OnDecisionAsync(
-                r.RequestId, r.UserId, "Reject", "Rejected", r.CurrentTier,
+                r.RequestId, r.UserId, "Reject", "Rejected", r.CurrentTier, r.CurrentTier,
                 "No clarification was provided within the allowed period.");
             _logger.LogInformation("Request {Id} auto-rejected (clarification timeout).", r.RequestId);
             await audit.LogAsync(r.RequestId, null,

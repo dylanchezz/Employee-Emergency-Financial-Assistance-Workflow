@@ -10,7 +10,7 @@ public interface INotificationService
     //   newStatus   = the resulting status ("In Review" / "Approved" / "Rejected" / "Returned" / "Deferred")
     //   nextTier    = the tier the request is now at (for "awaiting review" to the next approvers)
     //   reason      = the approver's reason (for reject/return/defer), if any
-    Task OnDecisionAsync(int requestId, int employeeId, string decision, string newStatus, int nextTier, string? reason);
+        Task OnDecisionAsync(int requestId, int employeeId, string decision, string newStatus, int nextTier, int actingTier, string? reason);
 
     // Notify the employee when validation rejects/returns their request at submission.
         Task OnSubmissionOutcomeAsync(int requestId, int employeeId, string status, string? note);
@@ -44,11 +44,29 @@ public class NotificationService : INotificationService
 {
     private readonly INotificationRepository _notifications;
     private readonly IUserRepository _users;
+    private readonly IEmailService _email;
 
-    public NotificationService(INotificationRepository notifications, IUserRepository users)
+    public NotificationService(
+        INotificationRepository notifications, IUserRepository users, IEmailService email)
     {
         _notifications = notifications;
         _users = users;
+        _email = email;
+    }
+
+    // Look up a user's email and send them one, recording an 'Email' notification row when it
+    // goes out. Best-effort — if there's no email or the send fails, the in-system notification
+    // (written separately by the caller) still stands.
+    private async Task EmailUserAsync(int requestId, int userId, string subject, string body)
+    {
+        var contact = await _users.GetContactByIdAsync(userId);
+        if (contact is null || string.IsNullOrWhiteSpace(contact.Value.Email)) return;
+
+        var sent = await _email.SendAsync(contact.Value.Email, subject, body);
+        if (sent)
+        {
+            await _notifications.CreateEmailAsync(requestId, userId, body);
+        }
     }
 
     // Tier → the role whose officers staff it (for notifying "the next approver").
@@ -62,24 +80,34 @@ public class NotificationService : INotificationService
     };
 
     public async Task OnDecisionAsync(
-        int requestId, int employeeId, string decision, string newStatus, int nextTier, string? reason)
+        int requestId, int employeeId, string decision, string newStatus, int nextTier, int actingTier, string? reason)
     {
+        // Name the tier that acted, and (when it advanced) the tier it moved to — so the
+        // employee sees exactly where their request stands, not a generic "at this stage".
+        var actingRole = RoleForTier(actingTier) ?? $"tier {actingTier}";
+        var nextRole = RoleForTier(nextTier) ?? $"tier {nextTier}";
+
         // 1. Always notify the employee about the outcome of THEIR request.
         var employeeMessage = decision switch
         {
             "Approve" when newStatus == "Approved" =>
-                $"Your request #{requestId} has been fully approved.",
+                $"Your request #{requestId} has been fully approved by the {actingRole} — this was the final approval stage.",
             "Approve" =>
-                $"Your request #{requestId} was approved at this stage and moved to the next approver.",
+                $"Your request #{requestId} was approved by the {actingRole} and has moved to the {nextRole} for the next stage of review.",
             "Reject" =>
-                $"Your request #{requestId} was rejected." + ReasonSuffix(reason),
+                $"Your request #{requestId} was rejected by the {actingRole}." + ReasonSuffix(reason),
             "Return" =>
-                $"Your request #{requestId} was returned for clarification." + ReasonSuffix(reason),
+                $"Your request #{requestId} was returned for clarification by the {actingRole}." + ReasonSuffix(reason),
             "Defer" =>
-                $"Your request #{requestId} was deferred." + ReasonSuffix(reason),
+                $"Your request #{requestId} was deferred by the {actingRole} (funds temporarily unavailable)." + ReasonSuffix(reason),
             _ => $"Your request #{requestId} status changed to {newStatus}.",
         };
         await _notifications.CreateAsync(requestId, employeeId, employeeMessage);
+        // Email the employee the same outcome (key event). Best-effort.
+        await EmailUserAsync(
+            requestId, employeeId,
+            $"Update on your assistance request #{requestId}",
+            employeeMessage);
 
         // 2. If the request advanced (still In Review at a new tier), notify that tier's approvers.
         if (decision == "Approve" && newStatus == "In Review")
@@ -193,6 +221,11 @@ public class NotificationService : INotificationService
         foreach (var adminId in adminIds)
         {
             await _notifications.CreateAsync(requestId, adminId, fullMessage);
+            // Email each admin the alert too (key event — they may be away from the app). Best-effort.
+            await EmailUserAsync(
+                requestId, adminId,
+                $"Action needed: request #{requestId}",
+                fullMessage);
         }
     }
         public async Task OnSlowOfficerAsync(int requestId, int officerId, bool wentUpATier)

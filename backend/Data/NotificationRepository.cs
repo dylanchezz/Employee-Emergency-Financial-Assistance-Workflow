@@ -6,6 +6,7 @@ namespace backend.Data;
 public interface INotificationRepository
 {
     Task CreateAsync(int requestId, int recipientId, string message);
+    Task CreateEmailAsync(int requestId, int recipientId, string message);
     Task<IEnumerable<Notification>> GetForUserAsync(int userId);
     Task<int> CountUnreadAsync(int userId);
     Task MarkReadAsync(int notificationId, int userId);
@@ -27,6 +28,16 @@ public class NotificationRepository : INotificationRepository
         const string sql = @"
             INSERT INTO notifications (request_id, recipient_id, channel, message)
             VALUES (@RequestId, @RecipientId, 'In-System', @Message);";
+        using var connection = _factory.CreateConnection();
+        await connection.ExecuteAsync(sql, new { RequestId = requestId, RecipientId = recipientId, Message = message });
+    }
+    // Record that an email notification was sent (channel 'Email'), so the email send is
+    // itself auditable alongside the in-system rows.
+    public async Task CreateEmailAsync(int requestId, int recipientId, string message)
+    {
+        const string sql = @"
+            INSERT INTO notifications (request_id, recipient_id, channel, message)
+            VALUES (@RequestId, @RecipientId, 'Email', @Message);";
         using var connection = _factory.CreateConnection();
         await connection.ExecuteAsync(sql, new { RequestId = requestId, RecipientId = recipientId, Message = message });
     }
