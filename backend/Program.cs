@@ -127,4 +127,5 @@ app.MapAuthEndpoints();
 app.MapProtectedTestEndpoints();
 app.MapRequestEndpoints();
 app.MapNotificationEndpoints();
+app.MapAdminEndpoints();
 app.Run();

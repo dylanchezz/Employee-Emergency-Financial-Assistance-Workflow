@@ -12,6 +12,8 @@ public interface IUserRepository
     Task<string?> GetRoleByIdAsync(int userId);
     Task<IEnumerable<int>> GetIdsByRoleAsync(string role);
     Task<(string Name, string Email)?> GetContactByIdAsync(int userId);
+    Task<IEnumerable<User>> GetAllAsync();
+    Task UpdateRoleAsync(int userId, string role);
 }
 
 public class UserRepository : IUserRepository
@@ -75,5 +77,30 @@ public class UserRepository : IUserRepository
         var row = await connection.QuerySingleOrDefaultAsync<(string Name, string Email)>(
             sql, new { UserId = userId });
         return row.Name is null ? null : row;
+    }
+
+    // All users (no password hash) — for the admin user-management screen.
+    public async Task<IEnumerable<User>> GetAllAsync()
+    {
+        const string sql = @"
+            SELECT user_id    AS UserId,
+                   name       AS Name,
+                   email      AS Email,
+                   role       AS Role,
+                   department AS Department,
+                   created_at AS CreatedAt
+            FROM users
+            ORDER BY role, name;";
+        using var connection = _factory.CreateConnection();
+        return await connection.QueryAsync<User>(sql);
+    }
+
+    // Change a user's role (admin only). The DB CHECK constraint on role is the final
+    // guard; the endpoint validates the string first so a bad value is a clean 400.
+    public async Task UpdateRoleAsync(int userId, string role)
+    {
+        const string sql = "UPDATE users SET role = @Role WHERE user_id = @UserId;";
+        using var connection = _factory.CreateConnection();
+        await connection.ExecuteAsync(sql, new { UserId = userId, Role = role });
     }
 }
