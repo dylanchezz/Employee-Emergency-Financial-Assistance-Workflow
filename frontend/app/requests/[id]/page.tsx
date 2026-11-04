@@ -360,7 +360,8 @@ export default function RequestDetailPage() {
     "Finance Officer": 3,
     "HR Manager": 4,
   };
-  const isApprover = role != null && roleTier[role] !== undefined;
+    const isApprover = role != null && roleTier[role] !== undefined;
+  const isAdmin = role === "System Administrator";
 
   // Actionable at my tier when In Review at my tier, or (Finance only) Deferred at tier 3.
   const atMyTier =
@@ -381,14 +382,20 @@ export default function RequestDetailPage() {
   // The owner may edit & resubmit their OWN request only while it is Returned.
   // (The detail endpoint is owner-or-approver; a non-approver who can see it is the owner.)
   const canResubmit =
-    detail != null && !isApprover && detail.status === "Returned";
+    detail != null && !isApprover && !isAdmin && detail.status === "Returned";
 
   return (
     <main className="min-h-screen px-6 py-10">
       <div className="mx-auto w-full max-w-2xl">
         <button
           onClick={() =>
-            router.push(isApprover ? "/dashboard/approver" : "/dashboard/employee")
+            router.push(
+              isAdmin
+                ? "/dashboard/admin"
+                : isApprover
+                ? "/dashboard/approver"
+                : "/dashboard/employee"
+            )
           }
           className="text-sm text-ink-soft hover:text-ink transition"
         >

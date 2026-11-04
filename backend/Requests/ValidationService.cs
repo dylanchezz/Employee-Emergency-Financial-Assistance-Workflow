@@ -12,11 +12,13 @@ public class ValidationService : IValidationService
 {
     private readonly IWelfareRequestRepository _requests;
 
-    // Rule thresholds (documented policy values).
-    private const decimal SalaryMultiplierCap = 1.5m;
-    private const int MinEmploymentMonths = 8;
-    private const int MaxRequestsPerYear = 3;
-    private const int DuplicateWindowDays = 21;
+    // Rule thresholds (documented policy values). Public so the admin "validation rules"
+    // screen can read the SAME constants the validation logic uses — one source of truth,
+    // so the displayed values can never drift from what actually runs.
+    public const decimal SalaryMultiplierCap = 1.5m;
+    public const int MinEmploymentMonths = 8;
+    public const int MaxRequestsPerYear = 3;
+    public const int DuplicateWindowDays = 21;
 
     public ValidationService(IWelfareRequestRepository requests)
     {

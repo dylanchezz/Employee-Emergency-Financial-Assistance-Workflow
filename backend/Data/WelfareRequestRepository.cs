@@ -21,6 +21,7 @@ public interface IWelfareRequestRepository
     Task<IEnumerable<WelfareRequest>> GetOverdueReturnedAsync(DateTime cutoffUtc);
     Task<IEnumerable<WelfareRequest>> GetOverdueDeferredAsync(DateTime cutoffUtc);
     Task RecordEscalationAsync(int requestId, int tier);
+    Task<IEnumerable<AdminAttentionItem>> GetNeedingAdminAttentionAsync(DateTime hrCutoffUtc, DateTime deferredCutoffUtc);
 }
 
 public class WelfareRequestRepository : IWelfareRequestRepository
@@ -306,5 +307,59 @@ public class WelfareRequestRepository : IWelfareRequestRepository
             VALUES (@RequestId, @Tier);";
         using var connection = _factory.CreateConnection();
         await connection.ExecuteAsync(sql, new { RequestId = requestId, Tier = tier });
+    }
+
+    // Requests that currently need an administrator's attention:
+    //  - In Review at HR (tier 4) AND escalated at least once (a stable signal — it stays
+    //    flagged until HR actually acts, regardless of the worker re-touching updated_at);
+    //  - Deferred past the deferred window.
+    // "since" uses the earliest escalation time (how long it's genuinely been stuck), not
+    // the churning updated_at. The claiming officer (if any) is shown for follow-up.
+    public async Task<IEnumerable<AdminAttentionItem>> GetNeedingAdminAttentionAsync(
+        DateTime hrCutoffUtc, DateTime deferredCutoffUtc)
+    {
+        const string sql = @"
+            -- Stuck at HR: In Review at tier 4 with a recorded escalation.
+            SELECT r.request_id   AS RequestId,
+                   u.name         AS RequesterName,
+                   r.category     AS Category,
+                   r.amount       AS Amount,
+                   r.status       AS Status,
+                   r.current_tier AS CurrentTier,
+                   (SELECT MIN(e.escalated_at) FROM escalations e
+                     WHERE e.request_id = r.request_id AND e.tier = 4) AS Since,
+                   o.name         AS OfficerName,
+                   o.email        AS OfficerEmail
+            FROM welfare_requests r
+            JOIN users u ON u.user_id = r.user_id
+            LEFT JOIN users o ON o.user_id = r.claimed_by
+            WHERE r.status = 'In Review'
+              AND r.current_tier >= 4
+              AND EXISTS (SELECT 1 FROM escalations e
+                           WHERE e.request_id = r.request_id AND e.tier = 4)
+
+            UNION ALL
+
+            -- Deferred too long (unchanged).
+            SELECT r.request_id   AS RequestId,
+                   u.name         AS RequesterName,
+                   r.category     AS Category,
+                   r.amount       AS Amount,
+                   r.status       AS Status,
+                   r.current_tier AS CurrentTier,
+                   r.updated_at   AS Since,
+                   o.name         AS OfficerName,
+                   o.email        AS OfficerEmail
+            FROM welfare_requests r
+            JOIN users u ON u.user_id = r.user_id
+            LEFT JOIN users o ON o.user_id = r.claimed_by
+            WHERE r.status = 'Deferred'
+              AND r.updated_at < @DeferredCutoff
+
+            ORDER BY Since ASC;";
+
+        using var connection = _factory.CreateConnection();
+        return await connection.QueryAsync<AdminAttentionItem>(
+            sql, new { DeferredCutoff = deferredCutoffUtc });
     }
 }
