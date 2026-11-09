@@ -39,7 +39,7 @@ public class TokenService : ITokenService
         issuer: _settings.Issuer,
         audience: _settings.Audience,
         claims: claims,
-        expires: DateTime.UtcNow.AddMinutes(_settings.ExpiryMiniutes),
+        expires: DateTime.UtcNow.AddMinutes(_settings.ExpiryMinutes),
         signingCredentials: credentials);
 
     //Serialize the key to compact header.payload.signature string

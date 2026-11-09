@@ -1,3 +1,4 @@
+// TODO: wire into shared navbar (backlog section 3 / Impact Log A6) — not imported yet; each dashboard still clears its own token inline.
 // Shared sign-out logic, used by every dashboard.
 // JWTs are stateless — the server keeps no session — so signing out means the
 // client discards its token. We still notify the backend's /auth/logout endpoint

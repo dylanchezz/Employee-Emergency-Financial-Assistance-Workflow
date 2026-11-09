@@ -7,6 +7,11 @@ namespace backend.Requests;
 // automatically, with no user action. This is FR-09 / NFR-05.
 public class EscalationWorker : BackgroundService
 {
+    // The audit text written when a request is flagged to admins for sitting at HR too long.
+    // One constant so the "has this already been alerted?" check matches exactly what is logged.
+    private const string HrAlertAuditAction =
+        "Escalation: awaiting HR beyond the response window — flagged to administrators.";
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<EscalationWorker> _logger;
 
@@ -35,8 +40,6 @@ public class EscalationWorker : BackgroundService
         }
     }
 
-    // One escalation pass. The worker is a SINGLETON, but the repositories are SCOPED,
-    // so we create a fresh DI scope per pass and resolve the scoped services from it.
     // One escalation pass. The worker is a SINGLETON, but the repositories are SCOPED,
     // so we create a fresh DI scope per pass and resolve the scoped services from it.
     private async Task RunOnceAsync()
@@ -69,9 +72,7 @@ public class EscalationWorker : BackgroundService
                 // Bump the clock so the peers get the window afresh.
                 await requests.UpdateStatusAndTierAsync(r.RequestId, "In Review", r.CurrentTier);
                 await notifications.OnReleasedToPeersAsync(r.RequestId, r.CurrentTier, slowOfficerId);
-                await notifications.OnReleasedToPeersAsync(r.RequestId, r.CurrentTier, slowOfficerId);
                 await notifications.OnSlowOfficerAsync(r.RequestId, slowOfficerId, wentUpATier: false);  // NEW
-                await notifications.OnEscalatedNotifyEmployeeAsync(r.RequestId, r.UserId, wentUpATier: false);
                 await notifications.OnEscalatedNotifyEmployeeAsync(r.RequestId, r.UserId, wentUpATier: false);
                 _logger.LogInformation(
                     "Request {Id} horizontally released from officer {Officer} at tier {Tier}.",
@@ -82,16 +83,23 @@ public class EscalationWorker : BackgroundService
             else if (r.CurrentTier >= 4)
             {
                 // VERTICAL at HR: no tier above — alert admins (name the slow officer if any).
+                // The in-app alert repeats every window (deliberately persistent), but admins are
+                // EMAILED only on the first one — otherwise a stuck request emails every admin on
+                // every pass (with the 1-min demo window that would exhaust Brevo's 300/day cap).
+                // "First" = this request has never had the HR-alert audit entry written before.
+                // (We can't use the escalations table for this: a horizontal release at tier 4
+                // also records a tier-4 escalation, which would wrongly suppress the first email.)
+                var firstHrAlert = !await audit.HasActionAsync(r.RequestId, HrAlertAuditAction);
                 await requests.RecordEscalationAsync(r.RequestId, r.CurrentTier);
                 await requests.UpdateStatusAndTierAsync(r.RequestId, "In Review", r.CurrentTier);
                 await notifications.OnAdminAlertAsync(
                     r.RequestId,
                     $"Request #{r.RequestId} has been awaiting HR review beyond the response window.",
-                    responsibleOfficerId: r.ClaimedBy);
+                    responsibleOfficerId: r.ClaimedBy,
+                    sendEmail: firstHrAlert);
                 await notifications.OnEscalatedNotifyEmployeeAsync(r.RequestId, r.UserId, wentUpATier: false);
                 _logger.LogInformation("Request {Id} escalated at HR tier → admin alerted.", r.RequestId);
-                await audit.LogAsync(r.RequestId, null,
-                    "Escalation: awaiting HR beyond the response window — flagged to administrators.");
+                await audit.LogAsync(r.RequestId, null, HrAlertAuditAction);
             }
             else
             {
@@ -125,8 +133,12 @@ public class EscalationWorker : BackgroundService
         foreach (var r in await requests.GetOverdueReturnedAsync(returnedCutoff))
         {
             await requests.UpdateStatusAndTierAsync(r.RequestId, "Rejected", r.CurrentTier);
+            // actingTier: 0 — no approver made this decision; the clarification timeout did.
+            // Tier 0 has no role, so the message reads "rejected automatically by the system"
+            // instead of naming the tier that returned it (which would falsely say e.g. "rejected
+            // by the Welfare Officer"). Applies to system-returned and approver-returned alike.
             await notifications.OnDecisionAsync(
-                r.RequestId, r.UserId, "Reject", "Rejected", r.CurrentTier, r.CurrentTier,
+                r.RequestId, r.UserId, "Reject", "Rejected", r.CurrentTier, actingTier: 0,
                 "No clarification was provided within the allowed period.");
             _logger.LogInformation("Request {Id} auto-rejected (clarification timeout).", r.RequestId);
             await audit.LogAsync(r.RequestId, null,
@@ -143,9 +155,14 @@ public class EscalationWorker : BackgroundService
                 r.RequestId,
                 $"Request #{r.RequestId} has been deferred at Finance beyond the allowed period and needs attention.",
                 responsibleOfficerId: r.ClaimedBy);
-            if (r.ClaimedBy is not null)                                                             // NEW
+            // Only an officer currently holding the request is told they were slow…
+            if (r.ClaimedBy is not null)
+            {
                 await notifications.OnSlowOfficerAsync(r.RequestId, r.ClaimedBy.Value, wentUpATier: false);
-                await notifications.OnEscalatedNotifyEmployeeAsync(r.RequestId, r.UserId, wentUpATier: false);
+            }
+            // …but the employee is always told (unconditional — the old indentation made this
+            // look like part of the if; it never was, and that behaviour is kept).
+            await notifications.OnEscalatedNotifyEmployeeAsync(r.RequestId, r.UserId, wentUpATier: false);
             _logger.LogInformation("Request {Id} deferred too long → admin alerted.", r.RequestId);
             await audit.LogAsync(r.RequestId, null,
                 "Deferred beyond the allowed period — flagged to administrators.");

@@ -31,7 +31,9 @@ public interface INotificationService
     Task OnEscalatedNotifyEmployeeAsync(int requestId, int employeeId, bool wentUpATier);
 
     // Alert all System Administrators; optionally name the responsible officer for follow-up.
-    Task OnAdminAlertAsync(int requestId, string message, int? responsibleOfficerId);
+    // The in-system alert is always written; sendEmail=false skips the email copy (used for
+    // repeat HR re-alerts so a stuck request doesn't email every admin on every pass).
+    Task OnAdminAlertAsync(int requestId, string message, int? responsibleOfficerId, bool sendEmail = true);
 
     // Tell the officer who claimed a request but didn't action it that it was taken from them.
     Task OnSlowOfficerAsync(int requestId, int officerId, bool wentUpATier);
@@ -94,6 +96,11 @@ public class NotificationService : INotificationService
                 $"Your request #{requestId} has been fully approved by the {actingRole} — this was the final approval stage.",
             "Approve" =>
                 $"Your request #{requestId} was approved by the {actingRole} and has moved to the {nextRole} for the next stage of review.",
+            // No approver tier acted (tier 0 = stopped at the automatic checks) — e.g. the
+            // escalation worker auto-rejecting a check-returned request whose clarification
+            // window expired. Say so, instead of "rejected by the tier 0".
+            "Reject" when RoleForTier(actingTier) is null =>
+                $"Your request #{requestId} was rejected automatically by the system." + ReasonSuffix(reason),
             "Reject" =>
                 $"Your request #{requestId} was rejected by the {actingRole}." + ReasonSuffix(reason),
             "Return" =>
@@ -128,7 +135,26 @@ public class NotificationService : INotificationService
 
     public async Task OnSubmissionOutcomeAsync(int requestId, int employeeId, string status, string? note)
     {
-        // Only notify when the request was stopped at submission (rejected/returned by the rules).
+        // Passed validation → it has just entered the tier-1 (Department Supervisor) queue.
+        // Tell tier 1 it's waiting — the same "awaiting your review" tiers 2–4 already get
+        // when a request advances to them. (Previously tier 1 got nothing on a new request.)
+        if (status == "In Review")
+        {
+            var supervisorIds = await _users.GetIdsByRoleAsync(RoleForTier(1)!);
+            foreach (var supervisorId in supervisorIds)
+            {
+                // Skip the submitter if they're a supervisor themselves — the self-approval
+                // guard means they can't claim their own request, so "awaiting your review"
+                // would be misleading.
+                if (supervisorId == employeeId) continue;
+                await _notifications.CreateAsync(
+                    requestId, supervisorId,
+                    $"Request #{requestId} is awaiting your review.");
+            }
+            return;
+        }
+
+        // Otherwise only notify when the request was stopped at submission (rejected/returned by the rules).
         if (status is not ("Rejected" or "Returned")) return;
 
         var message = status == "Rejected"
@@ -200,7 +226,7 @@ public class NotificationService : INotificationService
         await _notifications.CreateAsync(requestId, employeeId, message);
     }
 
-    public async Task OnAdminAlertAsync(int requestId, string message, int? responsibleOfficerId)
+    public async Task OnAdminAlertAsync(int requestId, string message, int? responsibleOfficerId, bool sendEmail = true)
     {
         // If a specific officer is responsible, append their name + email for follow-up.
         var fullMessage = message;
@@ -222,10 +248,14 @@ public class NotificationService : INotificationService
         {
             await _notifications.CreateAsync(requestId, adminId, fullMessage);
             // Email each admin the alert too (key event — they may be away from the app). Best-effort.
-            await EmailUserAsync(
-                requestId, adminId,
-                $"Action needed: request #{requestId}",
-                fullMessage);
+            // Skipped for repeat re-alerts (sendEmail=false) — the in-system row above still stands.
+            if (sendEmail)
+            {
+                await EmailUserAsync(
+                    requestId, adminId,
+                    $"Action needed: request #{requestId}",
+                    fullMessage);
+            }
         }
     }
         public async Task OnSlowOfficerAsync(int requestId, int officerId, bool wentUpATier)

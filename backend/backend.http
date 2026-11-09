@@ -1,6 +1,6 @@
 @backend_HostAddress = http://localhost:5264
 
-GET {{backend_HostAddress}}/weatherforecast/
+GET {{backend_HostAddress}}/api/health/db
 Accept: application/json
 
 ###

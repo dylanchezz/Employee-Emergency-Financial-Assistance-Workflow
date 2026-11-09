@@ -465,15 +465,8 @@ public static class RequestEndpoints
                 return Results.NotFound(new { error = "Request not found. "});
             }
         
-            //An approver or an administrator may view any request; an employee only their own.
-            var role = principal.FindFirstValue(ClaimTypes.Role);
-            var viewerIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
-                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
-            int.TryParse(viewerIdClaim, out var viewerId);
-            var isApprover = TierForRole(role) is not null;
-            var isAdmin = role == "System Administrator";
-            var isOwner = request.UserId == viewerId;
-            if (!isApprover && !isAdmin && !isOwner)
+            // Shared read-access rule (see CanViewRequest) — the document endpoint uses the same one.
+            if (!CanViewRequest(principal, request))
             {
                 return Results.Forbid();
             }
@@ -512,8 +505,9 @@ public static class RequestEndpoints
         })
         .RequireAuthorization();
 
-                // Download the supporting document for a request. Same access rule as the detail
-        // endpoint: an approver may view any request's document; an employee only their own.
+        // Download the supporting document for a request. Same access rule as the detail
+        // endpoint: an approver or administrator may view any request's document; an
+        // employee only their own.
         group.MapGet("/{id:int}/document", async (
             int id,
             ClaimsPrincipal principal,
@@ -526,14 +520,9 @@ public static class RequestEndpoints
                 return Results.NotFound(new { error = "Request not found." });
             }
 
-            // Authorise: approver (any) or the owning employee (their own only).
-            var role = principal.FindFirstValue(ClaimTypes.Role);
-            var viewerIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
-                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
-            int.TryParse(viewerIdClaim, out var viewerId);
-            var isApprover = TierForRole(role) is not null;
-            var isOwner = request.UserId == viewerId;
-            if (!isApprover && !isOwner)
+            // Same read-access rule as the detail endpoint — literally the same check, so the
+            // two can't drift apart again (that drift is what left admins locked out here).
+            if (!CanViewRequest(principal, request))
             {
                 return Results.Forbid();
             }
@@ -597,6 +586,16 @@ public static class RequestEndpoints
                 return Results.NotFound(new { error = "Request not found." });
             }
 
+            // Separation of duties: an approver may never take their own request — any
+            // authenticated user (approvers included) can submit, so without this an approver
+            // could submit a request and then claim + approve it themselves.
+            if (request.UserId == approverId)
+            {
+                return Results.Json(
+                    new { error = "You cannot claim a request you submitted yourself. Another officer at your tier must review it." },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             // Claimable when it's at this approver's tier AND either In Review, or
             // Deferred at the Finance tier (so Finance can re-claim a deferred request).
             var claimable =
@@ -624,7 +623,14 @@ public static class RequestEndpoints
                 });
             }
 
-            await claims.ClaimAsync(id, approverId);
+            // The write is conditional (see ClaimAsync): if another officer claimed it between
+            // our check above and this write, we lose the race and get the same response as
+            // if we'd seen their claim up front.
+            var claimed = await claims.ClaimAsync(id, approverId);
+            if (!claimed)
+            {
+                return Results.BadRequest(new { error = "This request is already claimed by another officer." });
+            }
             return Results.Ok(new { requestId = id, claimedBy = approverId });
         })
         .RequireAuthorization();
@@ -692,6 +698,15 @@ public static class RequestEndpoints
             if (request is null)
             {
                 return Results.NotFound(new { error = "Request not found." });
+            }
+            // Separation of duties (second line of defence — the claim endpoint already blocks
+            // this, but a decision must never be recorded by the request's own submitter, even
+            // if they somehow hold the claim, e.g. a claim taken before this guard existed).
+            if (request.UserId == approverId)
+            {
+                return Results.Json(
+                    new { error = "You cannot decide a request you submitted yourself." },
+                    statusCode: StatusCodes.Status403Forbidden);
             }
             // Actionable when it's at this approver's tier AND either In Review, or Deferred
             // at the Finance tier (so Finance can resolve a deferred request).
@@ -852,6 +867,23 @@ public static class RequestEndpoints
         
     }
 
+
+    // Read access to one request (its detail AND its document): an approver or an
+    // administrator may view any request (the admin as a read-only privileged viewer); an
+    // employee only their own. ONE definition, used by both endpoints — previously each had
+    // its own copy, and the admin rule was added to one but not the other (A24 bug #1).
+    private static bool CanViewRequest(ClaimsPrincipal principal, WelfareRequest request)
+    {
+        var role = principal.FindFirstValue(ClaimTypes.Role);
+        var viewerIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+        int.TryParse(viewerIdClaim, out var viewerId);
+
+        var isApprover = TierForRole(role) is not null;
+        var isAdmin = role == "System Administrator";
+        var isOwner = request.UserId == viewerId;
+        return isApprover || isAdmin || isOwner;
+    }
 
     // Maps an approver role to its workflow tier (null for non-approver roles).
     private static int? TierForRole(string? role) => role switch

@@ -9,7 +9,9 @@ ml-service/
 ├── data/           # synthetic dataset (raw/processed dirs are gitignored — regenerate via script)
 ├── models/         # trained model artifacts (.joblib) — gitignored, regenerate via training script
 ├── notebooks/       # exploratory analysis (dataset generation, training, evaluation)
-├── app.py          # FastAPI app exposing the /predict endpoint
+├── app/
+│   ├── main.py         # FastAPI app exposing the /predict and /health endpoints
+│   └── model_loader.py # loads the trained model once; builds features, predicts, SHAP explanation
 ├── generate_data.py    # synthetic dataset generation (Faker, NumPy, Pandas; fixed seed)
 ├── train.py            # training + evaluation script (Random Forest, k-fold CV, grid search)
 └── requirements.txt
@@ -30,5 +32,5 @@ the repo stays small. Document the scoring function, feature weights, and noise 
 
 ## Run the API
 ```bash
-uvicorn app:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000
 ```
