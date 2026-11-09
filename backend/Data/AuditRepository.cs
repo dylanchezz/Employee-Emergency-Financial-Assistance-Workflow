@@ -7,6 +7,9 @@ public interface IAuditRepository
 {
     Task LogAsync(int requestId, int? actorId, string action);
     Task<IEnumerable<AuditEntry>> GetRecentAsync(int limit);
+    // Has this exact action already been logged for this request? (Used by the escalation
+    // worker to tell the FIRST HR-overdue alert from a repeat.)
+    Task<bool> HasActionAsync(int requestId, string action);
 }
 
 public class AuditRepository : IAuditRepository
@@ -47,5 +50,17 @@ public class AuditRepository : IAuditRepository
             LIMIT @Limit;";
         using var connection = _factory.CreateConnection();
         return await connection.QueryAsync<AuditEntry>(sql, new { Limit = limit });
+    }
+
+    public async Task<bool> HasActionAsync(int requestId, string action)
+    {
+        const string sql = @"
+            SELECT EXISTS (
+                SELECT 1 FROM audit_logs
+                WHERE request_id = @RequestId AND action = @Action
+            );";
+        using var connection = _factory.CreateConnection();
+        return await connection.ExecuteScalarAsync<bool>(
+            sql, new { RequestId = requestId, Action = action });
     }
 }

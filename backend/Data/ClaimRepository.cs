@@ -8,7 +8,8 @@ public interface IClaimRepository
     // How many times this approver has already claimed this request (counts 'claim' events).
     Task<int> CountClaimsByApproverAsync(int requestId, int approverId);
     // Record a claim/release action and set/clear claimed_by in one transaction.
-    Task ClaimAsync(int requestId, int approverId);
+    // ClaimAsync returns false if another officer took the request first (lost the race).
+    Task<bool> ClaimAsync(int requestId, int approverId);
     Task PreAssignAsync(int requestId, int approverId);
     Task ReleaseAsync(int requestId, int approverId);
     // How many times this request has been force-released by the escalation worker at a tier.
@@ -45,15 +46,32 @@ public class ClaimRepository : IClaimRepository
 
     // Set claimed_by and log the 'claim' event together, so the lock and its
     // history can never drift apart.
-    public async Task ClaimAsync(int requestId, int approverId)
+    //
+    // The UPDATE is CONDITIONAL: it only takes the request if it is still unclaimed (or
+    // already held by this same approver). This closes the check-then-act race — the
+    // endpoint checks "unclaimed" first, but two approvers can both pass that check at
+    // the same instant. Postgres row-locks the UPDATE, so the second one waits, then
+    // re-checks the WHERE against the winner's write, matches 0 rows, and gets nothing.
+    // The claim event is only inserted for a row the UPDATE actually took (the CTE),
+    // so a lost race leaves no stray 'claim' event (and doesn't eat into the cap).
+    // Returns true if this approver now holds the request, false if they lost the race.
+    public async Task<bool> ClaimAsync(int requestId, int approverId)
     {
         const string sql = @"
-            UPDATE welfare_requests SET claimed_by = @ApproverId WHERE request_id = @RequestId;
+            WITH taken AS (
+                UPDATE welfare_requests
+                SET claimed_by = @ApproverId
+                WHERE request_id = @RequestId
+                  AND (claimed_by IS NULL OR claimed_by = @ApproverId)
+                RETURNING request_id
+            )
             INSERT INTO claim_events (request_id, approver_id, action)
-            VALUES (@RequestId, @ApproverId, 'claim');";
+            SELECT request_id, @ApproverId, 'claim' FROM taken;";
 
         using var connection = _factory.CreateConnection();
-        await connection.ExecuteAsync(sql, new { RequestId = requestId, ApproverId = approverId });
+        var rowsInserted = await connection.ExecuteAsync(
+            sql, new { RequestId = requestId, ApproverId = approverId });
+        return rowsInserted == 1;
     }
     // Pre-assign a request to an approver WITHOUT logging a claim event. Used when a
     // resubmitted request goes back to the officer who returned it: they're continuing

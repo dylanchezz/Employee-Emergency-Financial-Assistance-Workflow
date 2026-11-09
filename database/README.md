@@ -4,14 +4,14 @@ PostgreSQL schema for the Employee Emergency Financial Assistance Workflow.
 
 Database name: emergency_assistance_db
 
-The schema is defined in schema.sql and implements the logical database schema documented in Chapter 4. It contains eight tables: users, welfare_requests, priority_predictions, documents, approvals, notifications, escalations, and audit_logs.
+The schema is defined in schema.sql and implements the logical database schema documented in Chapter 4. It contains nine tables: users, welfare_requests, claim_events, priority_predictions, documents, approvals, notifications, escalations, and audit_logs.
 
 Design notes
 Single users table. All actors (Employee and the approver/admin roles) are stored in users, distinguished by the role column. This matches the class model, where Employee is a specialisation of User implemented via single-table inheritance.
 VARCHAR + CHECK constraints enforce the allowed values for role, status, priority, category, channel, and decision fields — readable and self-documenting.
 Foreign keys link every child record to its welfare_request (and users where relevant), enforcing referential integrity. Request-owned records use ON DELETE CASCADE; user references use RESTRICT (or SET NULL for audit actor) to preserve accountability.
 approvals.reason records the justification for a rejected or returned request.
-priority_predictions.request_id is UNIQUE — one prediction per request.
+priority_predictions.request_id is NOT unique — a request can hold several predictions (one per resubmit; migration 008 dropped the original UNIQUE so the priority history is kept). The application reads the latest by predicted_at.
 Prerequisites
 PostgreSQL installed and running (this project targets PostgreSQL 18).
 psql available on your PATH, or use DBeaver.
@@ -43,7 +43,7 @@ After loading, confirm the tables exist:
 bash
 psql -U postgres -d emergency_assistance_db -c "\dt"
 
-You should see the eight tables listed.
+You should see the nine tables listed.
 
 Note on re-running
 

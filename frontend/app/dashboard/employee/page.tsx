@@ -26,6 +26,7 @@ const STATUS_STYLES: Record<string, string> = {
   Approved: "bg-low/15 text-low",
   Rejected: "bg-kq-red/15 text-kq-red",
   Returned: "bg-ink-soft/15 text-ink-soft",
+  Deferred: "bg-ink-soft/15 text-ink-soft",
 };
 
 export default function EmployeeDashboard() {
