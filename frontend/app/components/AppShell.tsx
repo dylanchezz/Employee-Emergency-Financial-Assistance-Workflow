@@ -11,7 +11,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import NotificationBell from "./NotificationBell";
 import Avatar from "./Avatar";
 import { apiFetch } from "../lib/api";
-import { signOut } from "../lib/auth";
+import { signOut, LOGIN_PATH } from "../lib/auth";
 import { isApproverRole, useSession } from "../lib/session";
 
 type NavItem = { href: string; label: string; children?: { href: string; label: string }[] };
@@ -66,7 +66,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   // Not signed in → back to login. (No setState here — just navigation.)
   useEffect(() => {
-    if (ready && !token) router.replace("/");
+    if (ready && !token) router.replace(LOGIN_PATH);
   }, [ready, token, router]);
 
   // C7: the complete-profile nudge for an "Unassigned" employee (D1), shown on every page except
@@ -84,7 +84,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   async function handleSignOut() {
     await signOut();
-    router.replace("/");
+    router.replace(LOGIN_PATH);
   }
 
   if (!ready || !token) return null; // first paint / redirecting
@@ -99,7 +99,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       >
         <div className="bg-kq-red px-5 py-5 text-white">
           <span className="font-[family-name:var(--font-heading)] text-lg font-semibold tracking-tight">
-            Welfare Assistance
+            Employee Welfare Portal
           </span>
           <p className="mt-0.5 text-xs text-white/75">{role}</p>
         </div>

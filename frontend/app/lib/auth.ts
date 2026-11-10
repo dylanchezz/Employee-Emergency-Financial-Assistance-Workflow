@@ -3,6 +3,10 @@
 // JWTs are stateless — the server keeps no session — so signing out means the
 
 import { notifySessionChanged } from "./session";
+
+// Phase 4 (B1): where the login form lives — defined once in lib/routes (importable from server
+// components too) and re-exported here for the client pages that already import from auth.
+export { LOGIN_PATH } from "./routes";
 // client discards its token. We still notify the backend's /auth/logout endpoint
 // as the formal action, but we don't block on it: even if that call fails, the
 // token is cleared locally and the user is returned to the login page.

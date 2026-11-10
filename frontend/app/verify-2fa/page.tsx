@@ -13,6 +13,7 @@ import {
   setLoginNotice,
   type AuthResponse,
   type TwoFactorChallenge,
+  LOGIN_PATH,
 } from "../lib/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -39,7 +40,7 @@ export default function VerifyTwoFactorPage() {
   useEffect(() => {
     const pending = loadTwoFactorChallenge();
     if (!pending) {
-      router.replace("/");
+      router.replace(LOGIN_PATH);
       return;
     }
     setChallenge(pending);
@@ -58,7 +59,7 @@ export default function VerifyTwoFactorPage() {
   function startOver(message: string) {
     clearTwoFactorChallenge();
     setLoginNotice(message);
-    router.replace("/");
+    router.replace(LOGIN_PATH);
   }
 
   async function post(path: string, body?: unknown) {
@@ -188,7 +189,7 @@ export default function VerifyTwoFactorPage() {
             type="button"
             onClick={() => {
               clearTwoFactorChallenge();
-              router.replace("/");
+              router.replace(LOGIN_PATH);
             }}
             className="text-ink-soft hover:underline"
           >
