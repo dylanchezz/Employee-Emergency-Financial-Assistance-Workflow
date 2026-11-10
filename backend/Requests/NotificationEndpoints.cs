@@ -70,5 +70,20 @@ public static class NotificationEndpoints
             return Results.Ok(new { read = true });
         })
         .RequireAuthorization();
+
+        // Phase 3 (C6): clear (delete) all of the caller's own in-system notifications.
+        // Build decision 3: delete-own, not a "dismissed" flag — no migration, and nothing of
+        // record is lost (audit_logs is the permanent trail; Email-channel rows are kept).
+        group.MapDelete("/", async (
+            ClaimsPrincipal principal,
+            INotificationRepository notifications) =>
+        {
+            var userId = CallerId(principal);
+            if (userId is null) return Results.Unauthorized();
+
+            var cleared = await notifications.ClearAllAsync(userId.Value);
+            return Results.Ok(new { cleared });
+        })
+        .RequireAuthorization();
     }
 }

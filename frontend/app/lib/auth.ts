@@ -1,6 +1,8 @@
-// TODO: wire signOut() into shared navbar (backlog section 3 / Impact Log A6) — signOut() is not imported yet; each dashboard still clears its own token inline. (The login helpers below ARE used — A2.)
-// Shared sign-out logic, used by every dashboard.
+// Shared sign-out logic — Phase 3 wired it into the ONE navbar "Sign out" (AppShell), replacing
+// the three dashboards' inline handleLogout copies (the moment Impact Log A6 anticipated).
 // JWTs are stateless — the server keeps no session — so signing out means the
+
+import { notifySessionChanged } from "./session";
 // client discards its token. We still notify the backend's /auth/logout endpoint
 // as the formal action, but we don't block on it: even if that call fails, the
 // token is cleared locally and the user is returned to the login page.
@@ -24,6 +26,8 @@ export async function signOut() {
   localStorage.removeItem("token");
   localStorage.removeItem("role");
   localStorage.removeItem("name");
+  clearTwoFactorChallenge();
+  notifySessionChanged();
 }
 
 // ---- Login completion (shared by the password login page and the A2 /verify-2fa page) ----
@@ -53,7 +57,13 @@ export function completeLogin(data: AuthResponse): string {
   localStorage.setItem("role", data.role);
   localStorage.setItem("name", data.name);
   clearTwoFactorChallenge();
-  return ROLE_ROUTES[data.role] ?? "/dashboard/employee";
+  notifySessionChanged();
+  return dashboardFor(data.role);
+}
+
+// Where a role's dashboard lives — the one copy, used by login and by the shell's nav.
+export function dashboardFor(role: string | null): string {
+  return (role && ROLE_ROUTES[role]) || "/dashboard/employee";
 }
 
 // ---- A2 Email 2FA: the pending challenge between the password step and the code step ----

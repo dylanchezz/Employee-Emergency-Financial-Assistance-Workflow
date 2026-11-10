@@ -24,6 +24,11 @@ public static class AuthEndpoints
             {
                 return Results.BadRequest(new {error = "Name, email, and password are required"});
             }
+            // Phase 3 (A6): the shared password rule (also used by change-password + admin create).
+            if (PasswordPolicy.Problem(request.Password) is { } passwordProblem)
+            {
+                return Results.BadRequest(new { error = passwordProblem });
+            }
             // D1: department is now REQUIRED and must come from the canonical list (it drives
             // tier-1 routing). "Unassigned" is a placeholder state, not a valid choice.
             var department = request.Department?.Trim() ?? string.Empty;

@@ -167,6 +167,13 @@ public class NotificationService : INotificationService
         // (A24 #6's "skip the submitter" now lives in ApproverAudienceAsync, for every tier.)
         if (status == "In Review")
         {
+            // Phase 3 (C6 "every stage notifies"): the employee is told too — previously only a
+            // stopped submission (Rejected/Returned) notified them, a successful one was silent.
+            var entryRole = RoleForTier(entryTier) ?? $"tier {entryTier}";
+            await _notifications.CreateAsync(
+                requestId, employeeId,
+                $"Your request #{requestId} passed the automatic checks and is now with the {entryRole} for review.");
+
             foreach (var approverId in await ApproverAudienceAsync(requestId, entryTier))
             {
                 await _notifications.CreateAsync(

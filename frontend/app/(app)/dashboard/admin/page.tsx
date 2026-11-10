@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import NotificationBell from "../../components/NotificationBell";
-import TwoFactorToggle from "../../components/TwoFactorToggle";
-import AccountDeletionCard from "../../components/AccountDeletionCard";
-import DeletionRequestsQueue from "../../components/DeletionRequestsQueue";
-import { apiFetch } from "../../lib/api";
+import DeletionRequestsQueue from "@/app/components/DeletionRequestsQueue";
+import { apiFetch } from "@/app/lib/api";
+import { useSession } from "@/app/lib/session";
 
 // The six roles the backend/schema allow. The dropdowns offer exactly these.
 const ROLES = [
@@ -64,8 +62,8 @@ type AuditEntry = {
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("");
+  // Phase 3: name/role from the shared session hook (the shell already guards sign-in).
+  const { name, role } = useSession();
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [rules, setRules] = useState<ValidationRule[]>([]);
@@ -159,13 +157,6 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      router.replace("/");
-      return;
-    }
-    setName(localStorage.getItem("name") ?? "");
-    setRole(localStorage.getItem("role") ?? "");
     loadUsers();
     loadDepartments();
     loadRules();
@@ -174,12 +165,6 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
-  function handleLogout() {
-    localStorage.removeItem("token");
-    localStorage.removeItem("role");
-    localStorage.removeItem("name");
-    router.replace("/");
-  }
 
   // C2 follow-up: reactivate a deactivated (soft-deleted) account.
   async function reactivate(user: AdminUser) {
@@ -275,27 +260,16 @@ export default function AdminDashboard() {
   }
 
   return (
-    <main className="min-h-screen p-10">
-      <div className="mx-auto w-full max-w-4xl">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
-              Administrator Dashboard
-            </h1>
-            <p className="mt-2 text-ink-soft">
-              Signed in as {name} · {role}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <TwoFactorToggle />
-            <NotificationBell />
-            <button
-              onClick={handleLogout}
-              className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas"
-            >
-              Sign out
-            </button>
-          </div>
+    // Phase 3: content inside the AppShell — bell / 2FA / Sign out moved to the shell's navbar
+    // and the Profile page; the shell provides the <main>.
+    <div className="mx-auto w-full max-w-4xl">
+        <div>
+          <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
+            Administrator Dashboard
+          </h1>
+          <p className="mt-2 text-ink-soft">
+            Signed in as {name} · {role}
+          </p>
         </div>
 
         {/* Needs attention — requests the escalation worker has flagged for admin follow-up. */}
@@ -661,10 +635,7 @@ export default function AdminDashboard() {
             </div>
           </>
         )}
-        {/* C2: request account deletion (minimal; folds into the Profile screen, C1). */}
-        <AccountDeletionCard />
-      </div>
-    </main>
+    </div>
   );
 }
 

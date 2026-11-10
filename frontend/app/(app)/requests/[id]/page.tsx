@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { apiFetch } from "../../lib/api";
+import { apiFetch } from "@/app/lib/api";
+import { statusLabel } from "@/app/lib/requestStatus";
 
 // The same categories the new-request form offers, so a resubmit can change category too.
 const RESUBMIT_CATEGORIES = [
@@ -36,6 +37,7 @@ type PredictionHistoryItem = {
 type RequestDetail = {
   requestId: number;
   requesterName: string;
+  requesterId: number;   // Phase 3 (A7/C8): lets the page ask "is this MY request?"
   category: string;
   amount: number;
   description: string | null;
@@ -60,11 +62,6 @@ type RequestDetail = {
   } | null;
 };
 
-// D2: 'Approved' is no longer the end of the road — make the next step explicit.
-const STATUS_LABELS: Record<string, string> = {
-  Approved: "Approved — awaiting disbursement",
-  Disbursed: "Disbursed (paid)",
-};
 
 const PRIORITY_STYLES: Record<string, string> = {
   High: "bg-high text-white",
@@ -404,9 +401,14 @@ export default function RequestDetailPage() {
   const isAdmin = role === "System Administrator";
 
   // Actionable at my tier when In Review at my tier, or (Finance only) Deferred at tier 3.
+  // Phase 3 (A7/C8): approvers can now submit their own requests, so "owner" and "approver" are
+  // no longer opposites. Ownership is checked directly against the request's owner id.
+  const isOwner = detail != null && myId != null && detail.requesterId === myId;
+
   const atMyTier =
     detail != null &&
     isApprover &&
+    !isOwner &&   // never offer claim/decide on your own request (the backend refuses it too — A24 #2)
     roleTier[role!] === detail.currentTier &&
     (detail.status === "In Review" ||
       (detail.status === "Deferred" && roleTier[role!] === 3));
@@ -419,20 +421,23 @@ export default function RequestDetailPage() {
   const canClaim = atMyTier && detail?.claimedBy == null;
   const isFinance = role === "Finance Officer";
   // D2: a Finance Officer can pay out a fully approved request from here too.
-  const canDisburse = isFinance && detail?.status === "Approved";
+  const canDisburse = isFinance && detail?.status === "Approved" && !isOwner;   // D2 gap closed: not on your own
 
-  // The owner may edit & resubmit their OWN request only while it is Returned.
-  // (The detail endpoint is owner-or-approver; a non-approver who can see it is the owner.)
-  const canResubmit =
-    detail != null && !isApprover && !isAdmin && detail.status === "Returned";
+  // The owner may edit & resubmit their OWN request only while it is Returned. Phase 3 (A7/C8):
+  // was `!isApprover && !isAdmin` ("a non-approver who can see it must be the owner") — no longer
+  // true now approvers submit too, so it's now simply "is the owner".
+  const canResubmit = isOwner && detail?.status === "Returned";
 
   return (
-    <main className="min-h-screen px-6 py-10">
+    // Phase 3: content inside the AppShell (which provides <main>).
+    <div>
       <div className="mx-auto w-full max-w-2xl">
         <button
           onClick={() =>
             router.push(
-              isAdmin
+              isOwner
+                ? "/my-requests"
+                : isAdmin
                 ? "/dashboard/admin"
                 : isApprover
                 ? "/dashboard/approver"
@@ -441,7 +446,7 @@ export default function RequestDetailPage() {
           }
           className="text-sm text-ink-soft hover:text-ink transition"
         >
-          ← Back to dashboard
+          {isOwner ? "← Back to my requests" : "← Back to dashboard"}
         </button>
 
         {loading && <p className="mt-6 text-ink-soft">Loading…</p>}
@@ -472,7 +477,7 @@ export default function RequestDetailPage() {
             {/* Request facts */}
             <div className="mt-6 grid grid-cols-2 gap-4 rounded-2xl border border-line bg-surface p-6 text-sm">
               <Fact label="Amount (KES)" value={detail.amount.toLocaleString()} />
-              <Fact label="Status" value={STATUS_LABELS[detail.status] ?? detail.status} />
+              <Fact label="Status" value={statusLabel(detail.status)} />
               <Fact label="Current tier" value={String(detail.currentTier)} />
               <div>
                 <p className="text-ink-soft">Documents</p>
@@ -839,7 +844,7 @@ export default function RequestDetailPage() {
           </>
         )}
       </div>
-    </main>
+    </div>
   );
 }
 

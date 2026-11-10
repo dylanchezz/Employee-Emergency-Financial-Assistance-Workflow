@@ -11,6 +11,7 @@ public interface INotificationRepository
     Task<int> CountUnreadAsync(int userId);
     Task MarkReadAsync(int notificationId, int userId);
     Task MarkAllReadAsync(int userId);
+    Task<int> ClearAllAsync(int userId);   // Phase 3 (C6)
 }
 
 public class NotificationRepository : INotificationRepository
@@ -88,5 +89,18 @@ public class NotificationRepository : INotificationRepository
             WHERE recipient_id = @UserId AND is_read = FALSE;";
         using var connection = _factory.CreateConnection();
         await connection.ExecuteAsync(sql, new { UserId = userId });
+    }
+
+    // Phase 3 (C6) "Clear all": delete the caller's OWN in-system notifications. Recipient-scoped
+    // (WHERE recipient_id = caller), so nobody can clear anyone else's. Notifications are transient
+    // inbox items — the permanent record is audit_logs, which this never touches. 'Email'-channel
+    // rows are kept: they are the record that an email was actually sent (A21), not inbox items.
+    public async Task<int> ClearAllAsync(int userId)
+    {
+        const string sql = @"
+            DELETE FROM notifications
+            WHERE recipient_id = @UserId AND channel = 'In-System';";
+        using var connection = _factory.CreateConnection();
+        return await connection.ExecuteAsync(sql, new { UserId = userId });
     }
 }

@@ -152,6 +152,11 @@ public static class AdminEndpoints
             {
                 return Results.BadRequest(new { error = "Name, email, password, and role are required." });
             }
+            // Phase 3 (A6): the shared password rule.
+            if (PasswordPolicy.Problem(request.Password) is { } passwordProblem)
+            {
+                return Results.BadRequest(new { error = passwordProblem });
+            }
             if (!ValidRoles.Contains(request.Role))
             {
                 return Results.BadRequest(new { error = "Invalid role." });

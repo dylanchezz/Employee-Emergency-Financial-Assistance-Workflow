@@ -36,6 +36,10 @@ public interface IUserRepository
 
     // C2 follow-up: admin reactivates a deactivated account. True only if it WAS deactivated.
     Task<bool> ReactivateAsync(int userId);
+
+    // Phase 3 (A6): replace a PASSWORD account's hash. False if no such user, or the account has
+    // no password (Google-only — never give an OAuth account a password through this path).
+    Task<bool> SetPasswordHashAsync(int userId, string newHash);
 }
 
 public class UserRepository : IUserRepository
@@ -272,5 +276,16 @@ public class UserRepository : IUserRepository
             WHERE user_id = @UserId AND NOT is_active;";
         using var connection = _factory.CreateConnection();
         return await connection.ExecuteAsync(sql, new { UserId = userId }) > 0;
+    }
+
+    public async Task<bool> SetPasswordHashAsync(int userId, string newHash)
+    {
+        // WHERE password_hash IS NOT NULL: the DB itself refuses to turn a Google-only account
+        // into a password account here (the endpoint checks first; this is the backstop).
+        const string sql = @"
+            UPDATE users SET password_hash = @Hash
+            WHERE user_id = @UserId AND password_hash IS NOT NULL AND is_active;";
+        using var connection = _factory.CreateConnection();
+        return await connection.ExecuteAsync(sql, new { UserId = userId, Hash = newHash }) > 0;
     }
 }

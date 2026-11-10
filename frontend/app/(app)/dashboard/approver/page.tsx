@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "../../lib/api";
-import NotificationBell from "../../components/NotificationBell";
-import TwoFactorToggle from "../../components/TwoFactorToggle";
-import AccountDeletionCard from "../../components/AccountDeletionCard";
-import AwaitingDisbursement from "../../components/AwaitingDisbursement";
+import { apiFetch } from "@/app/lib/api";
+import AwaitingDisbursement from "@/app/components/AwaitingDisbursement";
+import { useSession } from "@/app/lib/session";
+import { statusLabel, statusStyle } from "@/app/lib/requestStatus";
 
 type QueueItem = {
   requestId: number;
@@ -40,14 +39,7 @@ const PRIORITY_BAR: Record<string, string> = {
   Low: "border-l-low",
 };
 
-const STATUS_STYLES: Record<string, string> = {
-  "In Review": "bg-medium/15 text-medium",
-  Approved: "bg-low/15 text-low",
-  Rejected: "bg-kq-red/15 text-kq-red",
-  Returned: "bg-ink-soft/15 text-ink-soft",
-  Deferred: "bg-ink-soft/15 text-ink-soft",
-  Disbursed: "bg-low text-white",   // D2: paid out — terminal
-};
+// Status pill colours/labels now come from the shared lib/requestStatus (Phase 3).
 
 // Read the current user's id from the JWT's "sub" claim.
 function currentUserId(): number | null {
@@ -65,8 +57,8 @@ function currentUserId(): number | null {
 
 export default function ApproverDashboard() {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("");
+  // Phase 3: name/role from the shared session hook (the shell already guards sign-in).
+  const { name, role } = useSession();
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [decided, setDecided] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,14 +67,6 @@ export default function ApproverDashboard() {
   const myId = currentUserId();
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      router.replace("/");
-      return;
-    }
-    setName(localStorage.getItem("name") ?? "");
-    setRole(localStorage.getItem("role") ?? "");
-
     (async () => {
       const result = await apiFetch<QueueItem[]>("/requests/queue");
       setLoading(false);
@@ -103,13 +87,6 @@ export default function ApproverDashboard() {
     })();
   }, [router]);
 
-  function handleLogout() {
-    localStorage.removeItem("token");
-    localStorage.removeItem("role");
-    localStorage.removeItem("name");
-    router.replace("/");
-  }
-
   // Counts by priority, for the summary strip.
   const counts = {
     High: queue.filter((q) => q.priorityLevel === "High").length,
@@ -118,27 +95,16 @@ export default function ApproverDashboard() {
   };
 
   return (
-    <main className="min-h-screen px-6 py-10">
-      <div className="mx-auto w-full max-w-4xl">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
-              Approver Dashboard
-            </h1>
-            <p className="mt-1 text-ink-soft">
-              {name} · {role}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <TwoFactorToggle />
-            <NotificationBell />
-            <button
-              onClick={handleLogout}
-              className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas"
-            >
-              Sign out
-            </button>
-          </div>
+    // Phase 3: content inside the AppShell — the header controls (bell, 2FA, Sign out) moved to
+    // the shell's navbar / the Profile page; the shell provides the <main>.
+    <div className="mx-auto w-full max-w-4xl">
+        <div>
+          <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
+            Review queue
+          </h1>
+          <p className="mt-1 text-ink-soft">
+            {name} · {role}
+          </p>
         </div>
 
         {/* Summary strip — how much is waiting, by urgency. */}
@@ -269,7 +235,12 @@ export default function ApproverDashboard() {
 
         {/* D2: Finance only — the post-approval payout step, a separate panel from the
             tier-3 review queue above. */}
-        {role === "Finance Officer" && <AwaitingDisbursement myId={myId} />}
+        {role === "Finance Officer" && (
+          // id = the sidebar's "Awaiting disbursement" anchor (/dashboard/approver#disbursement).
+          <div id="disbursement" className="scroll-mt-20">
+            <AwaitingDisbursement myId={myId} />
+          </div>
+        )}
 
         {decided.length > 0 && (
           <>
@@ -301,19 +272,16 @@ export default function ApproverDashboard() {
                   </div>
                   <span
                     className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      STATUS_STYLES[item.status] ?? "bg-ink-soft/15 text-ink-soft"
+                      statusStyle(item.status)
                     }`}
                   >
-                    {item.status}
+                    {statusLabel(item.status)}
                   </span>
                 </button>
               ))}
             </div>
           </>
         )}
-        {/* C2: request account deletion (minimal; folds into the Profile screen, C1). */}
-        <AccountDeletionCard />
-      </div>
-    </main>
+    </div>
   );
 }
