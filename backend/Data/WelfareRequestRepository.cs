@@ -134,7 +134,8 @@ public class WelfareRequestRepository : IWelfareRequestRepository
 
     public async Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier, int approverId)
     {
-        // Shared tier pool: In-Review requests at this tier, plus Deferred at Finance (3).
+        // Shared tier pool: In-Review requests at this tier, plus Deferred at Finance (3);
+        // at tier 1, only the approver's own department (D1).
         // Every such request is shown (claimed or not) so the queue can mark "Already Claimed";
         // my_claim_count tells the UI whether THIS viewer has hit their per-request claim cap.
         const string sql = @"
@@ -163,6 +164,13 @@ public class WelfareRequestRepository : IWelfareRequestRepository
               AND (
                     r.status = 'In Review'
                     OR (r.status = 'Deferred' AND @Tier = 3)
+                  )
+              -- D1: tier 1 is department-scoped — a Department Supervisor sees only requests
+              -- from employees in THEIR department (read from the DB, not the token).
+              -- Tiers 2–4 are cross-cutting and unaffected (the condition is a no-op for them).
+              AND (
+                    @Tier <> 1
+                    OR u.department = (SELECT department FROM users WHERE user_id = @ApproverId)
                   )
             ORDER BY
                 CASE p.priority_level

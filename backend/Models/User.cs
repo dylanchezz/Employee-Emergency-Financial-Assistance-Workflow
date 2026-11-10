@@ -10,7 +10,8 @@ public class User
     // NULL for a Google-only account (A3, migration 010) — it has no password of ours.
     public string? PasswordHash {get; set; }
     public string Role {get; set; } = string.Empty;
-    public string? Department {get; set; }
+    // D1 (migration 011): required, FK to departments(name). "Unassigned" until chosen.
+    public string Department {get; set; } = "Unassigned";
     public DateTime CreatedAt {get; set; }
     // A2 Email 2FA opt-in (migration 009). False = one-step login, exactly as before.
     public bool TwoFactorEnabled {get; set; }

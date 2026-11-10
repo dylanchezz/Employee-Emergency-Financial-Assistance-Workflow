@@ -139,7 +139,8 @@ public static class AdminEndpoints
         // Create a user with any role (so an admin can make approver/admin accounts).
         group.MapPost("/users", async (
             CreateUserRequest request,
-            IUserRepository users) =>
+            IUserRepository users,
+            IDepartmentRepository departments) =>
         {
             if (string.IsNullOrWhiteSpace(request.Name) ||
                 string.IsNullOrWhiteSpace(request.Email) ||
@@ -159,13 +160,24 @@ public static class AdminEndpoints
                 return Results.Conflict(new { error = "An account with this email already exists." });
             }
 
+            // D1: department is required in the DB (FK + NOT NULL). Blank → "Unassigned" (the
+            // admin can set it later); anything else must be a real department — checked here so
+            // a typo is a clean 400, not a foreign-key error.
+            var department = string.IsNullOrWhiteSpace(request.Department)
+                ? backend.Requests.RoutingPolicy.UnassignedDepartment
+                : request.Department.Trim();
+            if (!await departments.ExistsAsync(department))
+            {
+                return Results.BadRequest(new { error = $"Unknown department '{department}'. Create it first." });
+            }
+
             var user = new User
             {
                 Name = request.Name,
                 Email = request.Email,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
                 Role = request.Role,
-                Department = request.Department,
+                Department = department,
             };
             var newId = await users.CreateAsync(user);
             return Results.Created($"/api/admin/users/{newId}",
@@ -196,6 +208,48 @@ public static class AdminEndpoints
 
             await users.UpdateRoleAsync(id, request.Role);
             return Results.Ok(new { userId = id, role = request.Role });
+        });
+
+        // ---- D1: departments (minimal management: list + create) ----
+
+        // All departments, including "Unassigned", with how many users each has.
+        group.MapGet("/departments", async (IDepartmentRepository departments) =>
+            Results.Ok(await departments.GetAllAsync()));
+
+        group.MapPost("/departments", async (
+            CreateDepartmentRequest request,
+            IDepartmentRepository departments) =>
+        {
+            var name = request.Name?.Trim() ?? string.Empty;
+            if (name.Length == 0 || name.Length > 100)
+            {
+                return Results.BadRequest(new { error = "A department name (1–100 characters) is required." });
+            }
+            var created = await departments.CreateAsync(name);
+            return created is null
+                ? Results.Conflict(new { error = $"A department called '{name}' already exists." })
+                : Results.Created($"/api/admin/departments/{created.DepartmentId}", created);
+        });
+
+        // Set any user's department. This is how approvers get placed (a supervisor's department
+        // decides which tier-1 queue they see) and how a wrong self-service choice is corrected —
+        // users can only choose once themselves (see DepartmentEndpoints).
+        group.MapPut("/users/{id:int}/department", async (
+            int id,
+            ChooseDepartmentRequest request,
+            IUserRepository users,
+            IDepartmentRepository departments) =>
+        {
+            var name = request.Department?.Trim() ?? string.Empty;
+            if (name.Length == 0 || !await departments.ExistsAsync(name))
+            {
+                return Results.BadRequest(new { error = "Choose an existing department." });
+            }
+            if (!await users.SetDepartmentAsync(id, name))
+            {
+                return Results.NotFound(new { error = "User not found." });
+            }
+            return Results.Ok(new { userId = id, department = name });
         });
     }
 }

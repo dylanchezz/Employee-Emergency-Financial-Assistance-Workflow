@@ -1,7 +1,7 @@
 namespace backend.Auth;
 
 //What the client sends to signup. Defaults to creating an employee role
-public record SignupRequest(string Name, string Email, string Password, string Department);
+public record SignupRequest(string Name, string Email, string Password, string? Department);
 
 //What the client sends to login
 public record LoginRequest(string Email, string Password);
@@ -24,3 +24,9 @@ public record CreateUserRequest(string Name, string Email, string Password, stri
 
 // Admin: change a user's role.
 public record ChangeRoleRequest(string Role);
+
+// D1: a department name chosen from the canonical list (self-service, admin user edit).
+public record ChooseDepartmentRequest(string? Department);
+
+// D1: admin creates a department.
+public record CreateDepartmentRequest(string? Name);

@@ -12,8 +12,9 @@ public interface INotificationService
     //   reason      = the approver's reason (for reject/return/defer), if any
         Task OnDecisionAsync(int requestId, int employeeId, string decision, string newStatus, int nextTier, int actingTier, string? reason);
 
-    // Notify the employee when validation rejects/returns their request at submission.
-        Task OnSubmissionOutcomeAsync(int requestId, int employeeId, string status, string? note);
+    // Notify the employee when validation rejects/returns their request at submission; or, when
+    // it passed, tell the approvers at the tier it entered (D1: RoutingPolicy.InitialTierFor).
+        Task OnSubmissionOutcomeAsync(int requestId, int employeeId, string status, string? note, int entryTier);
 
     // An employee edited and resubmitted a Returned request. It passed validation and is
     // back In Review at the tier that returned it. Notify the employee it went through,
@@ -81,6 +82,20 @@ public class NotificationService : INotificationService
         _ => null,
     };
 
+    // D1: THE audience for every "approvers at tier N" notification about a request.
+    //  - everyone with the tier's role, EXCEPT the request's owner (the self-approval guard,
+    //    A24 #2, means they could never act on it — this generalises A24 #6, which skipped a
+    //    supervisor-submitter at tier 1 only, to every tier);
+    //  - at the department-scoped tier (1), only supervisors in the owner's department.
+    // One helper, so the queue rule and the notification rule can't drift apart.
+    private async Task<IEnumerable<int>> ApproverAudienceAsync(int requestId, int tier)
+    {
+        var role = RoleForTier(tier);
+        if (role is null) return Enumerable.Empty<int>();
+        return await _users.GetApproverIdsForRequestAsync(
+            requestId, role, sameDepartmentAsOwner: tier == RoutingPolicy.DepartmentScopedTier);
+    }
+
     public async Task OnDecisionAsync(
         int requestId, int employeeId, string decision, string newStatus, int nextTier, int actingTier, string? reason)
     {
@@ -119,36 +134,27 @@ public class NotificationService : INotificationService
         // 2. If the request advanced (still In Review at a new tier), notify that tier's approvers.
         if (decision == "Approve" && newStatus == "In Review")
         {
-            var role = RoleForTier(nextTier);
-            if (role is not null)
+            foreach (var approverId in await ApproverAudienceAsync(requestId, nextTier))
             {
-                var approverIds = await _users.GetIdsByRoleAsync(role);
-                foreach (var approverId in approverIds)
-                {
-                    await _notifications.CreateAsync(
-                        requestId, approverId,
-                        $"Request #{requestId} is awaiting your review.");
-                }
+                await _notifications.CreateAsync(
+                    requestId, approverId,
+                    $"Request #{requestId} is awaiting your review.");
             }
         }
     }
 
-    public async Task OnSubmissionOutcomeAsync(int requestId, int employeeId, string status, string? note)
+    public async Task OnSubmissionOutcomeAsync(int requestId, int employeeId, string status, string? note, int entryTier)
     {
-        // Passed validation → it has just entered the tier-1 (Department Supervisor) queue.
-        // Tell tier 1 it's waiting — the same "awaiting your review" tiers 2–4 already get
-        // when a request advances to them. (Previously tier 1 got nothing on a new request.)
+        // Passed validation → it has just entered the queue at entryTier — tier 1 (the
+        // employee's own Department Supervisors) or, for a supervisor's own request, tier 2
+        // (D1: decided once, in RoutingPolicy.InitialTierFor). Tell that tier it's waiting.
+        // (A24 #6's "skip the submitter" now lives in ApproverAudienceAsync, for every tier.)
         if (status == "In Review")
         {
-            var supervisorIds = await _users.GetIdsByRoleAsync(RoleForTier(1)!);
-            foreach (var supervisorId in supervisorIds)
+            foreach (var approverId in await ApproverAudienceAsync(requestId, entryTier))
             {
-                // Skip the submitter if they're a supervisor themselves — the self-approval
-                // guard means they can't claim their own request, so "awaiting your review"
-                // would be misleading.
-                if (supervisorId == employeeId) continue;
                 await _notifications.CreateAsync(
-                    requestId, supervisorId,
+                    requestId, approverId,
                     $"Request #{requestId} is awaiting your review.");
             }
             return;
@@ -179,11 +185,8 @@ public class NotificationService : INotificationService
             return;
         }
 
-        // 2b. Otherwise it's back in the shared pool — tell every approver at that tier.
-        var role = RoleForTier(tier);
-        if (role is null) return;
-        var approverIds = await _users.GetIdsByRoleAsync(role);
-        foreach (var approverId in approverIds)
+        // 2b. Otherwise it's back in the shared pool — tell that tier's approvers (D1 audience).
+        foreach (var approverId in await ApproverAudienceAsync(requestId, tier))
         {
             await _notifications.CreateAsync(
                 requestId, approverId,
@@ -193,10 +196,7 @@ public class NotificationService : INotificationService
 
     public async Task OnEscalatedToTierAsync(int requestId, int newTier)
     {
-        var role = RoleForTier(newTier);
-        if (role is null) return;
-        var approverIds = await _users.GetIdsByRoleAsync(role);
-        foreach (var approverId in approverIds)
+        foreach (var approverId in await ApproverAudienceAsync(requestId, newTier))
         {
             await _notifications.CreateAsync(
                 requestId, approverId,
@@ -206,10 +206,8 @@ public class NotificationService : INotificationService
 
     public async Task OnReleasedToPeersAsync(int requestId, int tier, int slowOfficerId)
     {
-        var role = RoleForTier(tier);
-        if (role is null) return;
-        var ids = await _users.GetIdsByRoleAsync(role);
-        foreach (var id in ids)
+        // D1: at tier 1 the "peers" are the other supervisors of the employee's department.
+        foreach (var id in await ApproverAudienceAsync(requestId, tier))
         {
             if (id == slowOfficerId) continue; // don't ping the officer it was taken from
             await _notifications.CreateAsync(
@@ -268,10 +266,7 @@ public class NotificationService : INotificationService
 
     public async Task OnTierMissedAsync(int requestId, int tier)
     {
-        var role = RoleForTier(tier);
-        if (role is null) return;
-        var ids = await _users.GetIdsByRoleAsync(role);
-        foreach (var id in ids)
+        foreach (var id in await ApproverAudienceAsync(requestId, tier))
         {
             await _notifications.CreateAsync(
                 requestId, id,

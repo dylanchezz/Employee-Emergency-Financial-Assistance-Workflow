@@ -25,7 +25,8 @@ public static class RequestEndpoints
             IPriorityPredictionRepository predictions,
             IDocumentRepository documents,
             INotificationService notifications,
-            IAuditRepository audit) =>
+            IAuditRepository audit,
+            IUserRepository users) =>
         {
             // Identify submitter from the token, not the request body.
             var userIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
@@ -34,6 +35,26 @@ public static class RequestEndpoints
             if (userIdClaim is null || !int.TryParse(userIdClaim, out var userId))
             {
                 return Results.Unauthorized();
+            }
+
+            // D1: the submitter's role and department, read fresh from the DB (the token carries
+            // the role but not the department, and an admin may have changed either since login).
+            var submitter = await users.GetByIdAsync(userId);
+            if (submitter is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            // D1 complete-profile gate: tier-1 routing needs a real department, so an
+            // "Unassigned" account (e.g. a Google sign-up, A27) must choose one first.
+            // Enforced HERE, not only in the UI.
+            if (submitter.Department == RoutingPolicy.UnassignedDepartment)
+            {
+                return Results.BadRequest(new
+                {
+                    error = "Please choose your department before submitting a request.",
+                    needsDepartment = true,
+                });
             }
 
             // Read the fields from the multipart form (instead of a JSON DTO).
@@ -112,7 +133,9 @@ public static class RequestEndpoints
             if (validationResult.Outcome == ValidationOutcome.Validated)
             {
                 request.Status = "In Review";
-                request.CurrentTier = 1;
+                // D1: THE entry-tier decision (one place — RoutingPolicy). Normally tier 1 (the
+                // employee's own Department Supervisor); a supervisor's own request enters at 2.
+                request.CurrentTier = RoutingPolicy.InitialTierFor(submitter.Role);
             }
             else
             {
@@ -123,13 +146,16 @@ public static class RequestEndpoints
             // Store the request first so we have its id (for the prediction and the document).
             var newId = await requests.CreateAsync(request);
             // If validation stopped the request at submission, tell the employee.
-            await notifications.OnSubmissionOutcomeAsync(newId, userId, request.Status, request.ValidationNote);
+            await notifications.OnSubmissionOutcomeAsync(
+                newId, userId, request.Status, request.ValidationNote, entryTier: request.CurrentTier);
 
             // Audit: the submission, and the validation outcome (the actor is the employee).
             await audit.LogAsync(newId, userId, "Submitted the request.");
             await audit.LogAsync(newId, userId, request.Status switch
             {
-                "In Review" => "Passed rule-based validation.",
+                "In Review" => request.CurrentTier == 1
+                    ? "Passed rule-based validation."
+                    : $"Passed rule-based validation. Entered review at tier {request.CurrentTier} (a Department Supervisor's own request skips tier 1).",
                 "Rejected"  => $"Rejected at validation: {request.ValidationNote}",
                 "Returned"  => $"Returned at validation: {request.ValidationNote}",
                 _           => $"Validation outcome: {request.Status}",
@@ -329,7 +355,7 @@ public static class RequestEndpoints
             {
                 await requests.UpdateStatusAndTierAsync(id, validationResult.Status, 0);
                 await notifications.OnSubmissionOutcomeAsync(
-                    id, userId, validationResult.Status, request.ValidationNote);
+                    id, userId, validationResult.Status, request.ValidationNote, entryTier: 0);
                 await audit.LogAsync(id, userId, validationResult.Status == "Rejected"
                     ? $"Rejected again at validation on resubmit: {request.ValidationNote}"
                     : $"Returned again at validation on resubmit: {request.ValidationNote}");
@@ -367,9 +393,13 @@ public static class RequestEndpoints
                 });
             }
 
-            // Re-enter at the tier that returned it (design choice). If somehow there's no
-            // Returned record, fall back to tier 1 (full re-review).
-            var returningTier = await approvals.GetReturningTierAsync(id) ?? 1;
+            // Re-enter at the tier that returned it (design choice). If there's no approver
+            // Returned record (e.g. it was returned by the automatic checks), fall back to the
+            // request's normal entry tier — D1: the SAME RoutingPolicy decision as a fresh
+            // submit, so a supervisor's own request still skips tier 1 here too.
+            var ownerRole = await users.GetRoleByIdAsync(userId) ?? "Employee";
+            var returningTier = await approvals.GetReturningTierAsync(id)
+                ?? RoutingPolicy.InitialTierFor(ownerRole);
 
             // Clear any stale claim first — a resubmit starts a fresh review cycle.
             if (request.ClaimedBy is not null)
@@ -564,7 +594,8 @@ public static class RequestEndpoints
             ClaimsPrincipal principal,
             IWelfareRequestRepository requests,
             IClaimRepository claims,
-            INotificationService notifications) =>
+            INotificationService notifications,
+            IUserRepository users) =>
         {
             var role = principal.FindFirstValue(ClaimTypes.Role);
             var approverTier = TierForRole(role);
@@ -593,6 +624,15 @@ public static class RequestEndpoints
             {
                 return Results.Json(
                     new { error = "You cannot claim a request you submitted yourself. Another officer at your tier must review it." },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            // D1: tier 1 is department-scoped — the queue already hides other departments'
+            // requests, but the API must refuse them too (a hidden button is not a rule).
+            if (!await IsWithinDepartmentScopeAsync(approverTier.Value, approverId, request, users))
+            {
+                return Results.Json(
+                    new { error = "This request belongs to another department's supervisors." },
                     statusCode: StatusCodes.Status403Forbidden);
             }
 
@@ -676,7 +716,8 @@ public static class RequestEndpoints
             IApprovalRepository approvals,
             IClaimRepository claims,
             INotificationService notifications,
-            IAuditRepository audit) =>
+            IAuditRepository audit,
+            IUserRepository users) =>
         {
             // Who is acting, and at what tier.
             var approverIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
@@ -706,6 +747,15 @@ public static class RequestEndpoints
             {
                 return Results.Json(
                     new { error = "You cannot decide a request you submitted yourself." },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+            // D1 second line of defence, same idea as the self-approval guard above: a tier-1
+            // decision must come from a supervisor of the employee's department, even if they
+            // somehow hold the claim (e.g. a resubmit pre-assignment after an admin moved them).
+            if (!await IsWithinDepartmentScopeAsync(approverTier.Value, approverId, request, users))
+            {
+                return Results.Json(
+                    new { error = "This request belongs to another department's supervisors." },
                     statusCode: StatusCodes.Status403Forbidden);
             }
             // Actionable when it's at this approver's tier AND either In Review, or Deferred
@@ -886,6 +936,22 @@ public static class RequestEndpoints
     }
 
     // Maps an approver role to its workflow tier (null for non-approver roles).
+    // D1: is this approver allowed to act on this request, department-wise? Only tier 1 is
+    // department-scoped; tiers 2–4 always pass. Shared by the claim AND decide endpoints so the
+    // two enforcement points can't drift apart (the A24 fix-7 lesson). Departments are read
+    // from the DB, never from the token.
+    private static async Task<bool> IsWithinDepartmentScopeAsync(
+        int approverTier, int approverId, WelfareRequest request, IUserRepository users)
+    {
+        if (approverTier != RoutingPolicy.DepartmentScopedTier)
+        {
+            return true;
+        }
+        var approverDepartment = await users.GetDepartmentByIdAsync(approverId);
+        var ownerDepartment = await users.GetDepartmentByIdAsync(request.UserId);
+        return approverDepartment is not null && approverDepartment == ownerDepartment;
+    }
+
     private static int? TierForRole(string? role) => role switch
     {
         "Department Supervisor" => 1,

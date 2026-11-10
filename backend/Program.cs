@@ -51,6 +51,7 @@ builder.Services.AddScoped<IAuditRepository, AuditRepository>();
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ITwoFactorCodeRepository, TwoFactorCodeRepository>();
+builder.Services.AddScoped<IDepartmentRepository, DepartmentRepository>();   // D1
 
 // A3 Google sign-in: settings (secret from gitignored config only) + a typed HttpClient for
 // the server-to-server code exchange with Google.
@@ -167,6 +168,7 @@ app.MapGet("/api/health/db", async (IDbConnectionFactory factory) =>
 app.MapAuthEndpoints();
 app.MapTwoFactorEndpoints();
 app.MapGoogleAuthEndpoints();
+app.MapDepartmentEndpoints();   // D1
 app.MapProtectedTestEndpoints();
 app.MapRequestEndpoints();
 app.MapNotificationEndpoints();
