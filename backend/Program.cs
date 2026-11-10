@@ -172,6 +172,7 @@ app.MapTwoFactorEndpoints();
 app.MapGoogleAuthEndpoints();
 app.MapDepartmentEndpoints();   // D1
 app.MapAccountDeletionEndpoints();   // C2
+app.MapProfileEndpoints();   // Phase 3 (C1/A6)
 app.MapProtectedTestEndpoints();
 app.MapRequestEndpoints();
 app.MapNotificationEndpoints();

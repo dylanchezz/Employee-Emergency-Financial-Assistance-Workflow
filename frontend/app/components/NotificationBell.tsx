@@ -107,6 +107,16 @@ export default function NotificationBell() {
             )}
           </div>
 
+          {/* Phase 3 (C6): the full list (with Clear all) lives on its own page. */}
+          <button
+            onClick={() => {
+              setOpen(false);
+              router.push("/notifications");
+            }}
+            className="block w-full border-b border-line px-4 py-2 text-left text-xs font-medium text-kq-red hover:bg-canvas"
+          >
+            View all notifications →
+          </button>
           <div className="max-h-96 overflow-y-auto">
             {items.length === 0 ? (
               <p className="px-4 py-6 text-center text-sm text-ink-soft">

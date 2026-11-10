@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "../../lib/api";
+import Link from "next/link";
+import { apiFetch } from "@/app/lib/api";
+import { useSession } from "@/app/lib/session";
 
 const CATEGORIES = [
   "Medical Emergency",
@@ -28,7 +30,13 @@ const DESCRIPTION_TEMPLATES: Record<string, string> = {
 export default function NewRequestPage() {
   const router = useRouter();
 
-  const [employeeName, setEmployeeName] = useState("");
+  // Phase 3: who is requesting comes from the shared session (the shell guards sign-in). Works for
+  // approvers too (A7/C8) — the backend already accepted their submissions and routes a
+  // supervisor's own request to tier 2 (RoutingPolicy, D1).
+  const { name: employeeName } = useSession();
+  // D1/C7: an "Unassigned" account must choose a department first — say so up front instead of
+  // letting them fill the whole form and fail on submit. (The backend enforces it either way.)
+  const [needsDepartment, setNeedsDepartment] = useState(false);
 
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
@@ -45,16 +53,11 @@ export default function NewRequestPage() {
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Pre-fill who is requesting, from the session — the employee shouldn't retype
-  // what the system already knows about them.
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      router.replace("/");
-      return;
-    }
-    setEmployeeName(localStorage.getItem("name") ?? "");
-  }, [router]);
+    apiFetch<{ needsDepartment: boolean }>("/me/department").then((res) => {
+      if (res.ok) setNeedsDepartment(res.data.needsDepartment);
+    });
+  }, []);
 
   // When a category is chosen, offer a description draft — but only if the
   // description is still empty, so we never discard the employee's own words.
@@ -148,21 +151,24 @@ export default function NewRequestPage() {
     "mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20";
 
   return (
-    <main className="min-h-screen px-6 py-10">
+    // Phase 3: content inside the AppShell (the sidebar replaces the old "Back to dashboard",
+    // which also assumed every requester was an Employee).
+    <div>
       <div className="mx-auto w-full max-w-xl">
-        <button
-          onClick={() => router.push("/dashboard/employee")}
-          className="text-sm text-ink-soft hover:text-ink transition"
-        >
-          ← Back to dashboard
-        </button>
-
-        <h1 className="mt-4 font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
+        <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
           New assistance request
         </h1>
         <p className="mt-1 text-ink-soft">
           Tell us what you need help with. Urgent cases are reviewed first.
         </p>
+
+        {needsDepartment && (
+          <div className="mt-6 rounded-2xl border border-medium/30 bg-medium/10 p-5 text-sm text-ink" role="status">
+            Choose your department before submitting a request — it decides which Department Supervisor
+            reviews it first.{" "}
+            <Link href="/profile" className="font-medium text-kq-red hover:underline">Go to Profile →</Link>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-8 rounded-2xl border border-line bg-surface p-6 sm:p-8">
           {/* Requesting as — pre-filled from the session, not retyped. */}
@@ -304,19 +310,20 @@ export default function NewRequestPage() {
           )}
           {success && (
             <p className="mt-5 text-sm text-low" role="status">
-              {success}
+              {success}{" "}
+              <Link href="/track" className="font-medium text-kq-red hover:underline">Track it →</Link>
             </p>
           )}
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || needsDepartment}
             className="mt-7 w-full rounded-lg bg-kq-red py-2.5 font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60"
           >
             {loading ? "Submitting…" : "Submit request"}
           </button>
         </form>
       </div>
-    </main>
+    </div>
   );
 }

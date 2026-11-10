@@ -7,6 +7,10 @@ public class RequestDetailDto
 {
     public int RequestId { get; set; }
     public string RequesterName { get; set; } = string.Empty;
+    // Phase 3 (A7/C8): the owner's user id, so the UI can ask "is this MY request?" instead of
+    // "am I not an approver?" (approvers can now submit their own). Also lets the D2 Disburse box
+    // hide itself on a Finance officer's own request. Not sensitive: the viewer can already see it.
+    public int RequesterId { get; set; }
     public string Category { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public string? Description { get; set; }

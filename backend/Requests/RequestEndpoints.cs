@@ -511,6 +511,7 @@ public static class RequestEndpoints
             {
                 RequestId = request.RequestId,
                 RequesterName = requesterName,
+                RequesterId = request.UserId,
                 Category = request.Category,
                 Amount = request.Amount,
                 Description = request.Description,

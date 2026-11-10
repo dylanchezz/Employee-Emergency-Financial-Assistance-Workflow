@@ -12,6 +12,8 @@ export default function SignupPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Phase 3 (A5): confirm-password, checked here before anything is sent.
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [department, setDepartment] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -28,6 +30,16 @@ export default function SignupPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    // A5: client-side checks before the request — the server re-checks the length (PasswordPolicy).
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("The passwords don't match.");
+      return;
+    }
     setLoading(true);
 
     try {
@@ -142,11 +154,34 @@ export default function SignupPage() {
               id="password"
               type="password"
               required
+              minLength={8}
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+              placeholder="At least 8 characters"
+            />
+          </div>
+
+          {/* A5: confirm password — mismatch is shown live and blocks submit. */}
+          <div className="mt-5">
+            <label htmlFor="confirmPassword" className="block text-sm font-medium text-ink">
+              Confirm password
+            </label>
+            <input
+              id="confirmPassword"
+              type="password"
+              required
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              aria-invalid={confirmPassword.length > 0 && confirmPassword !== password}
+              className="mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
               placeholder="••••••••"
             />
+            {confirmPassword.length > 0 && confirmPassword !== password && (
+              <p className="mt-1.5 text-sm text-kq-red">The passwords don&apos;t match.</p>
+            )}
           </div>
 
           <div className="mt-5">

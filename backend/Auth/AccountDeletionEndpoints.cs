@@ -224,16 +224,33 @@ public static class AccountDeletionEndpoints
             DeletionRequestBody? body,
             ClaimsPrincipal principal,
             IAccountDeletionRepository deletions,
+            IEmailService email,
             ILoggerFactory loggerFactory) =>
         {
             var adminId = CallerId(principal);
-            if (!await deletions.RejectAsync(id, adminId, Trimmed(body?.Reason, 1000)))
+            var reason = Trimmed(body?.Reason, 1000);
+            if (!await deletions.RejectAsync(id, adminId, reason))
             {
                 return Results.Conflict(new { error = "This request is no longer pending (or doesn't exist)." });
             }
-            loggerFactory.CreateLogger("Account.Deletion")
-                .LogInformation("Admin {AdminId} rejected deletion request {DeletionId}; the account stays active.", adminId, id);
-            return Results.Ok(new { deletionId = id, status = "Rejected" });
+            var logger = loggerFactory.CreateLogger("Account.Deletion");
+            logger.LogInformation("Admin {AdminId} rejected deletion request {DeletionId}; the account stays active.", adminId, id);
+
+            // Phase 3 (C6): tell the user (best-effort email — the in-app bell is request-scoped,
+            // so an account decision can't go there; the Profile card also shows "declined").
+            var request = await deletions.GetByIdAsync(id);
+            var sent = false;
+            if (!string.IsNullOrWhiteSpace(request?.Email))
+            {
+                sent = await email.SendAsync(
+                    request.Email,
+                    "Your account deletion request was declined",
+                    $"Hello {request.Name},\n\nAn administrator declined your request to delete your Welfare Assistance " +
+                    "account, so your account remains active." + (reason is null ? "" : $"\n\nReason: {reason}") +
+                    "\n\nYou can see this on your Profile page, and request again there if needed.");
+            }
+            logger.LogInformation("Deletion-declined email to user {UserId}: {Result}.", request?.UserId, sent ? "sent" : "NOT sent");
+            return Results.Ok(new { deletionId = id, status = "Rejected", notificationEmailSent = sent });
         });
     }
 

@@ -33,3 +33,6 @@ public record CreateDepartmentRequest(string? Name);
 
 // C2: optional reason on an account-deletion request (from the user) or a rejection (from the admin).
 public record DeletionRequestBody(string? Reason);
+
+// Phase 3 (A6): change your own password.
+public record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
