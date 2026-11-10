@@ -486,7 +486,8 @@ public static class RequestEndpoints
             IWelfareRequestRepository requests,
             IUserRepository users,
             IPriorityPredictionRepository predictions,
-            IApprovalRepository approvals) =>
+            IApprovalRepository approvals,
+            IDisbursementRepository disbursements) =>
         {
 
             var request = await requests.GetByIdAsync(id);
@@ -531,6 +532,26 @@ public static class RequestEndpoints
                     })
                     .ToList(),
             };
+
+            // D2: the payout, if any. The Finance memo (note) is internal — only approvers and
+            // admins get it; the employee sees amount, reference, who and when.
+            if (request.Status == "Disbursed")
+            {
+                var paid = await disbursements.GetByRequestIdAsync(id);
+                if (paid is not null)
+                {
+                    var viewerRole = principal.FindFirstValue(ClaimTypes.Role);
+                    var staffViewer = TierForRole(viewerRole) is not null || viewerRole == "System Administrator";
+                    detail.Disbursement = new DisbursementInfo
+                    {
+                        Amount = paid.Amount,
+                        Reference = paid.Reference,
+                        Note = staffViewer ? paid.Note : null,
+                        DisbursedByName = paid.DisbursedByName ?? "Finance",
+                        DisbursedAt = paid.DisbursedAt,
+                    };
+                }
+            }
             return Results.Ok(detail);
         })
         .RequireAuthorization();
@@ -892,6 +913,102 @@ public static class RequestEndpoints
         })
         .RequireAuthorization();
 
+        // ---- D2: Finance-disbursed payout ----
+        // 'Approved' (HR's tier-4 approval) is no longer the end: Finance pays the request out and
+        // it becomes 'Disbursed' (terminal). This is a POST-APPROVAL step keyed on STATUS, not
+        // tier — deliberately separate from Finance's tier-3 review queue (/queue).
+
+        // Finance's "awaiting disbursement" list: everything fully approved and not yet paid.
+        group.MapGet("/awaiting-disbursement", async (
+            ClaimsPrincipal principal,
+            IDisbursementRepository disbursements) =>
+        {
+            if (!IsFinanceOfficer(principal))
+            {
+                return Results.Forbid();
+            }
+            return Results.Ok(await disbursements.GetAwaitingAsync());
+        })
+        .RequireAuthorization();
+
+        // Finance pays out one approved request. No claim step: the conditional
+        // Approved → Disbursed write IS the lock (build decision 3).
+        group.MapPost("/{id:int}/disburse", async (
+            int id,
+            DisburseDto? dto,
+            ClaimsPrincipal principal,
+            IWelfareRequestRepository requests,
+            IDisbursementRepository disbursements,
+            INotificationService notifications,
+            IAuditRepository audit) =>
+        {
+            if (!IsFinanceOfficer(principal))
+            {
+                return Results.Forbid();
+            }
+            var idClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (idClaim is null || !int.TryParse(idClaim, out var financeOfficerId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var reference = string.IsNullOrWhiteSpace(dto?.Reference) ? null : dto!.Reference!.Trim();
+            var note = string.IsNullOrWhiteSpace(dto?.Note) ? null : dto!.Note!.Trim();
+            if (reference is { Length: > 100 })
+            {
+                return Results.BadRequest(new { error = "The payment reference can be at most 100 characters." });
+            }
+
+            // Guard 1: the request exists.
+            var request = await requests.GetByIdAsync(id);
+            if (request is null)
+            {
+                return Results.NotFound(new { error = "Request not found." });
+            }
+
+            // Guard 2: it is fully approved and not yet paid.
+            if (request.Status != "Approved")
+            {
+                return Results.BadRequest(new { error = $"This request is not awaiting disbursement (status: {request.Status})." });
+            }
+
+            // Guard 3: separation of duties (build decision 2) — the same principle as the
+            // self-approval guard (A24 #2): a Finance officer never pays out their own request.
+            if (request.UserId == financeOfficerId)
+            {
+                return Results.Json(
+                    new { error = "You cannot disburse a request you submitted yourself. Another Finance Officer must do it." },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            // Guard 4: the conditional transition. Null = it stopped being 'Approved' between the
+            // check above and this write — another officer disbursed it first.
+            var paid = await disbursements.TryDisburseAsync(id, financeOfficerId, reference, note);
+            if (paid is null)
+            {
+                return Results.Conflict(new { error = "This request has already been disbursed." });
+            }
+
+            // Audit: request-scoped, so it fits audit_logs (unlike account-level events).
+            await audit.LogAsync(id, financeOfficerId,
+                $"Disbursed KES {paid.Amount:N2} by Finance" +
+                (paid.Reference is null ? "." : $" (reference: {paid.Reference})."));
+
+            // Tell the employee (in-app + best-effort email).
+            await notifications.OnDisbursedAsync(id, request.UserId, paid.Amount, paid.Reference);
+
+            return Results.Ok(new
+            {
+                requestId = id,
+                status = "Disbursed",
+                amount = paid.Amount,
+                reference = paid.Reference,
+                disbursedAt = paid.DisbursedAt,
+            });
+        })
+        .RequireAuthorization();
+
                 // Requests this approver has personally decided on (any current status).
         group.MapGet("/my-decisions", async (
             ClaimsPrincipal principal,
@@ -951,6 +1068,11 @@ public static class RequestEndpoints
         var ownerDepartment = await users.GetDepartmentByIdAsync(request.UserId);
         return approverDepartment is not null && approverDepartment == ownerDepartment;
     }
+
+    // D2: disbursement is a Finance Officer action (a role check, not a tier check — it's a
+    // post-approval step, not part of the tier-3 review).
+    private static bool IsFinanceOfficer(ClaimsPrincipal principal) =>
+        principal.FindFirstValue(ClaimTypes.Role) == "Finance Officer";
 
     private static int? TierForRole(string? role) => role switch
     {

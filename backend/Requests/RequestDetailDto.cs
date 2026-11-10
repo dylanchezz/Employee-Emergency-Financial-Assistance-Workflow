@@ -29,6 +29,20 @@ public class RequestDetailDto
     // resubmitted (so the UI can show "was Low -> now Medium"). PriorityLevel/Explanation
     // above are the current (latest) prediction; this is the full trail.
     public List<PredictionHistoryItem> PredictionHistory { get; set; } = new();
+
+    // D2: the Finance payout, once the request is Disbursed (null before that).
+    public DisbursementInfo? Disbursement { get; set; }
+}
+
+// D2: what the detail page shows about a payout. Note is the internal Finance memo —
+// filled only for approver/admin viewers, never sent to the employee.
+public class DisbursementInfo
+{
+    public decimal Amount { get; set; }
+    public string? Reference { get; set; }
+    public string? Note { get; set; }
+    public string DisbursedByName { get; set; } = string.Empty;
+    public DateTime DisbursedAt { get; set; }
 }
 
 public class ApprovalHistoryItem

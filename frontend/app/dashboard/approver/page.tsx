@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import NotificationBell from "../../components/NotificationBell";
 import TwoFactorToggle from "../../components/TwoFactorToggle";
+import AwaitingDisbursement from "../../components/AwaitingDisbursement";
 
 type QueueItem = {
   requestId: number;
@@ -44,6 +45,7 @@ const STATUS_STYLES: Record<string, string> = {
   Rejected: "bg-kq-red/15 text-kq-red",
   Returned: "bg-ink-soft/15 text-ink-soft",
   Deferred: "bg-ink-soft/15 text-ink-soft",
+  Disbursed: "bg-low text-white",   // D2: paid out — terminal
 };
 
 // Read the current user's id from the JWT's "sub" claim.
@@ -263,6 +265,10 @@ export default function ApproverDashboard() {
             })}
           </div>
         )}
+
+        {/* D2: Finance only — the post-approval payout step, a separate panel from the
+            tier-3 review queue above. */}
+        {role === "Finance Officer" && <AwaitingDisbursement myId={myId} />}
 
         {decided.length > 0 && (
           <>

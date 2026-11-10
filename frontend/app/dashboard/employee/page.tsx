@@ -29,6 +29,14 @@ const STATUS_STYLES: Record<string, string> = {
   Rejected: "bg-kq-red/15 text-kq-red",
   Returned: "bg-ink-soft/15 text-ink-soft",
   Deferred: "bg-ink-soft/15 text-ink-soft",
+  // D2: the final positive outcome — solid, stronger than Approved's tint.
+  Disbursed: "bg-low text-white",
+};
+
+// D2: 'Approved' is no longer the end — say what happens next, so it doesn't look stalled.
+const STATUS_LABELS: Record<string, string> = {
+  Approved: "Approved — awaiting disbursement",
+  Disbursed: "Disbursed (paid)",
 };
 
 export default function EmployeeDashboard() {
@@ -159,7 +167,7 @@ export default function EmployeeDashboard() {
                     STATUS_STYLES[r.status] ?? "bg-ink-soft/15 text-ink-soft"
                   }`}
                 >
-                  {r.status}
+                  {STATUS_LABELS[r.status] ?? r.status}
                 </span>
               </button>
             ))}

@@ -50,6 +50,20 @@ type RequestDetail = {
   explanation: string | null;   // JSON string of ShapFactor[]
   approvals: ApprovalItem[];
   predictionHistory: PredictionHistoryItem[];
+  // D2: the Finance payout once Disbursed (note is only sent to approvers/admins).
+  disbursement: {
+    amount: number;
+    reference: string | null;
+    note: string | null;
+    disbursedByName: string;
+    disbursedAt: string;
+  } | null;
+};
+
+// D2: 'Approved' is no longer the end of the road — make the next step explicit.
+const STATUS_LABELS: Record<string, string> = {
+  Approved: "Approved — awaiting disbursement",
+  Disbursed: "Disbursed (paid)",
 };
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -149,6 +163,12 @@ export default function RequestDetailPage() {
   const [resubmitting, setResubmitting] = useState(false);
   const [resubmitMsg, setResubmitMsg] = useState("");
 
+  // D2: Finance's Disburse action on this page (same endpoint + guards as the dashboard panel).
+  const [disburseRef, setDisburseRef] = useState("");
+  const [disburseNote, setDisburseNote] = useState("");
+  const [disbursing, setDisbursing] = useState(false);
+  const [disburseMsg, setDisburseMsg] = useState("");
+
   const myId = currentUserId();
 
   async function load() {
@@ -223,6 +243,26 @@ export default function RequestDetailPage() {
     setMessage(`Decision recorded: ${result.data.status}.`);
     setReason("");
     load(); // refresh the detail (status/claim/history will have changed)
+  }
+
+  // D2: record the payout. The backend fixes the amount, refuses the officer's own request
+  // (403) and a request someone else just paid (400/409) — those messages are shown as-is.
+  async function disburse() {
+    setDisburseMsg("");
+    setDisbursing(true);
+    const result = await apiFetch<{ amount: number }>(`/requests/${id}/disburse`, {
+      method: "POST",
+      body: { reference: disburseRef.trim() || null, note: disburseNote.trim() || null },
+    });
+    setDisbursing(false);
+    if (!result.ok) {
+      setDisburseMsg(result.error);
+      load(); // the status may have changed under us (e.g. another officer paid it)
+      return;
+    }
+    setDisburseRef("");
+    setDisburseNote("");
+    load(); // status → Disbursed; the "Paid out" box appears
   }
 
   // Open the edit form, prefilled with the request's current values.
@@ -378,6 +418,8 @@ export default function RequestDetailPage() {
   const canDecide = atMyTier && iHoldIt;
   const canClaim = atMyTier && detail?.claimedBy == null;
   const isFinance = role === "Finance Officer";
+  // D2: a Finance Officer can pay out a fully approved request from here too.
+  const canDisburse = isFinance && detail?.status === "Approved";
 
   // The owner may edit & resubmit their OWN request only while it is Returned.
   // (The detail endpoint is owner-or-approver; a non-approver who can see it is the owner.)
@@ -430,7 +472,7 @@ export default function RequestDetailPage() {
             {/* Request facts */}
             <div className="mt-6 grid grid-cols-2 gap-4 rounded-2xl border border-line bg-surface p-6 text-sm">
               <Fact label="Amount (KES)" value={detail.amount.toLocaleString()} />
-              <Fact label="Status" value={detail.status} />
+              <Fact label="Status" value={STATUS_LABELS[detail.status] ?? detail.status} />
               <Fact label="Current tier" value={String(detail.currentTier)} />
               <div>
                 <p className="text-ink-soft">Documents</p>
@@ -462,6 +504,22 @@ export default function RequestDetailPage() {
                 <div className="col-span-2">
                   <p className="text-ink-soft">Reason for deferral</p>
                   <p className="mt-0.5 text-ink">{detail.deferReason}</p>
+                </div>
+              )}
+              {/* D2: the payout record — the request's final, positive outcome. */}
+              {detail.disbursement && (
+                <div className="col-span-2 rounded-xl border border-low/30 bg-low/10 p-4">
+                  <p className="font-medium text-low">
+                    Paid out: KES {detail.disbursement.amount.toLocaleString()}
+                  </p>
+                  <p className="mt-1 text-ink-soft">
+                    By {detail.disbursement.disbursedByName} (Finance) on{" "}
+                    {new Date(detail.disbursement.disbursedAt).toLocaleString()}
+                    {detail.disbursement.reference && <> · Reference: {detail.disbursement.reference}</>}
+                  </p>
+                  {detail.disbursement.note && (
+                    <p className="mt-1 text-ink-soft">Internal note: {detail.disbursement.note}</p>
+                  )}
                 </div>
               )}
             </div>
@@ -640,6 +698,47 @@ export default function RequestDetailPage() {
                 )}
 
                 {resubmitMsg && <p className="mt-3 text-sm text-ink">{resubmitMsg}</p>}
+              </div>
+            )}
+
+            {/* D2: Finance payout — post-approval, keyed on status (not tier/claim). */}
+            {canDisburse && (
+              <div className="mt-8 rounded-2xl border border-low/30 border-l-4 border-l-low bg-surface p-6">
+                <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
+                  Disburse this request
+                </h2>
+                <p className="mt-1 text-sm text-ink-soft">
+                  Fully approved by HR. Pay out{" "}
+                  <span className="font-semibold text-ink">KES {detail.amount.toLocaleString()}</span> — the
+                  approved amount (fixed; no partial payments).
+                </p>
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <input
+                    value={disburseRef}
+                    onChange={(e) => setDisburseRef(e.target.value)}
+                    maxLength={100}
+                    placeholder="Payment reference (optional)"
+                    className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                  />
+                  <input
+                    value={disburseNote}
+                    onChange={(e) => setDisburseNote(e.target.value)}
+                    placeholder="Internal note (optional)"
+                    className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                  />
+                </div>
+                <button
+                  onClick={disburse}
+                  disabled={disbursing}
+                  className="mt-4 rounded-lg bg-low px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-60"
+                >
+                  {disbursing ? "Recording…" : "Disburse"}
+                </button>
+                {disburseMsg && (
+                  <p className="mt-3 text-sm text-kq-red" role="alert">
+                    {disburseMsg}
+                  </p>
+                )}
               </div>
             )}
 
