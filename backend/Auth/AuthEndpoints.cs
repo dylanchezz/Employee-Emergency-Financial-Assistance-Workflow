@@ -1,6 +1,7 @@
 using System.Net;
 using backend.Data;
 using backend.Models;
+using backend.Requests;
 
 namespace backend.Auth;
 
@@ -50,19 +51,54 @@ public static class AuthEndpoints
         group.MapPost("/login", async (
             LoginRequest request,
             IUserRepository users,
-            ITokenService tokenService
+            ITokenService tokenService,
+            ITwoFactorCodeRepository codes,
+            IEmailService email
         ) =>
         {
             var user = await users.GetByEmailAsync(request.Email);
 
+            // A3 (A25): a Google-only account has no password. Say so plainly rather than
+            // "incorrect password" — and this guard must come BEFORE BCrypt.Verify, which
+            // throws on a null hash (that would surface as a 500).
+            if (user is not null && user.PasswordHash is null)
+            {
+                return Results.Json(
+                    new { error = "This account uses Google sign-in. Please use \"Continue with Google\"." },
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
+
             //Same response whether the email is unknown or the password is wrong.
             //An attacker cannot tell which emails are registered
-            if (user is null || 
+            if (user is null ||
                 !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             {
                 return Results.Unauthorized();
             }
 
+            // A2 Email 2FA: an enrolled user gets a code by email and a pre-auth token —
+            // NOT the real JWT. The real token is only minted by /verify-2fa after a correct code.
+            if (user.TwoFactorEnabled)
+            {
+                var sent = await TwoFactorCodeSender.IssueAndSendAsync(
+                    user, freshLoginAttempt: true, codes, email);
+                if (!sent)
+                {
+                    // No email → the user could never finish, so don't leave a dead code behind.
+                    await codes.DeleteAllForUserAsync(user.UserId);
+                    return Results.Json(
+                        new { error = "We couldn't send your sign-in code by email. Please try again later or contact your administrator." },
+                        statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
+
+                return Results.Ok(new TwoFactorChallengeResponse(
+                    TwoFactorRequired: true,
+                    PreAuthToken: tokenService.CreatePreAuthToken(user),
+                    MaskedEmail: TwoFactorCodeSender.MaskEmail(user.Email),
+                    ResendCooldownSeconds: (int)TwoFactorPolicy.ResendCooldown.TotalSeconds));
+            }
+
+            // Not enrolled: one-step login, exactly as before A2.
             var token = tokenService.CreateToken(user);
 
             return Results.Ok(new AuthResponse(

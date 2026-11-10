@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import NotificationBell from "../../components/NotificationBell";
+import TwoFactorToggle from "../../components/TwoFactorToggle";
 
 type QueueItem = {
   requestId: number;
@@ -125,13 +126,16 @@ export default function ApproverDashboard() {
               {name} · {role}
             </p>
           </div>
-          <NotificationBell />
-          <button
-            onClick={handleLogout}
-            className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas"
-          >
-            Sign out
-          </button>
+          <div className="flex items-center gap-3">
+            <TwoFactorToggle />
+            <NotificationBell />
+            <button
+              onClick={handleLogout}
+              className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
 
         {/* Summary strip — how much is waiting, by urgency. */}
