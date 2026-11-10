@@ -41,6 +41,9 @@ public interface INotificationService
 
     // Tell all approvers at a tier that an unclaimed request escalated past their level.
     Task OnTierMissedAsync(int requestId, int tier);
+
+    // D2: Finance paid out the request — tell the employee (in-app + best-effort email).
+    Task OnDisbursedAsync(int requestId, int employeeId, decimal amount, string? reference);
 }
 
 public class NotificationService : INotificationService
@@ -107,8 +110,9 @@ public class NotificationService : INotificationService
         // 1. Always notify the employee about the outcome of THEIR request.
         var employeeMessage = decision switch
         {
+            // D2: 'Approved' is no longer the end — say the payment step is next.
             "Approve" when newStatus == "Approved" =>
-                $"Your request #{requestId} has been fully approved by the {actingRole} — this was the final approval stage.",
+                $"Your request #{requestId} has been fully approved by the {actingRole} — this was the final approval stage. Finance will now disburse the funds.",
             "Approve" =>
                 $"Your request #{requestId} was approved by the {actingRole} and has moved to the {nextRole} for the next stage of review.",
             // No approver tier acted (tier 0 = stopped at the automatic checks) — e.g. the
@@ -139,6 +143,18 @@ public class NotificationService : INotificationService
                 await _notifications.CreateAsync(
                     requestId, approverId,
                     $"Request #{requestId} is awaiting your review.");
+            }
+        }
+
+        // 3. D2: fully approved → it now waits on Finance to pay it. Tell the Finance Officers
+        // (in-app; same audience rule as every approver fan-out, so never the request's owner).
+        if (decision == "Approve" && newStatus == "Approved")
+        {
+            foreach (var financeId in await ApproverAudienceAsync(requestId, 3))
+            {
+                await _notifications.CreateAsync(
+                    requestId, financeId,
+                    $"Request #{requestId} has been fully approved and is awaiting disbursement.");
             }
         }
     }
@@ -272,6 +288,19 @@ public class NotificationService : INotificationService
                 requestId, id,
                 $"Request #{requestId} escalated past your level — it was not claimed and actioned in time.");
         }
+    }
+
+    // D2: same shape as OnDecisionAsync's employee part — in-app row + best-effort email.
+    public async Task OnDisbursedAsync(int requestId, int employeeId, decimal amount, string? reference)
+    {
+        var message =
+            $"Your assistance request #{requestId} has been disbursed: KES {amount:N2} has been paid out by Finance." +
+            (string.IsNullOrWhiteSpace(reference) ? "" : $" Payment reference: {reference}.");
+        await _notifications.CreateAsync(requestId, employeeId, message);
+        await EmailUserAsync(
+            requestId, employeeId,
+            $"Your assistance request #{requestId} has been paid",
+            message);
     }
 
     private static string ReasonSuffix(string? reason) =>

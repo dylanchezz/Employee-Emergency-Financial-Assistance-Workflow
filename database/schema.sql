@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS disbursements    CASCADE;
 DROP TABLE IF EXISTS two_factor_codes CASCADE;
 DROP TABLE IF EXISTS audit_logs      CASCADE;
 DROP TABLE IF EXISTS escalations      CASCADE;
@@ -100,7 +101,9 @@ CREATE TABLE welfare_requests (
                        'In Review',
                        'Approved',
                        'Escalated',
-                       'Deferred'
+                       'Deferred',
+                       -- D2 (migration 012): Finance paid out an Approved request. Terminal.
+                       'Disbursed'
                    )),
     current_tier   INTEGER NOT NULL DEFAULT 0
                    CHECK (current_tier BETWEEN 0 AND 4),
@@ -219,6 +222,24 @@ CREATE TABLE audit_logs (
                    REFERENCES users(user_id) ON DELETE SET NULL,
     action         VARCHAR(255) NOT NULL,
     logged_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- disbursements
+-- D2 (migration 012): the Finance payout of a fully approved request. One per request
+-- (UNIQUE); amount copied from the request at payment time; own table because the
+-- approvals CHECK allows only Approved/Rejected/Returned (same reason as Deferred).
+
+CREATE TABLE disbursements (
+    disbursement_id  SERIAL PRIMARY KEY,
+    request_id       INTEGER NOT NULL UNIQUE
+                     REFERENCES welfare_requests(request_id) ON DELETE CASCADE,
+    disbursed_by     INTEGER NOT NULL
+                     REFERENCES users(user_id) ON DELETE RESTRICT,
+    amount           NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+    reference        VARCHAR(100),
+    note             TEXT,
+    disbursed_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 

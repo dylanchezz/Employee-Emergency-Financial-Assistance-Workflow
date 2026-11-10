@@ -52,6 +52,7 @@ builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Emai
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ITwoFactorCodeRepository, TwoFactorCodeRepository>();
 builder.Services.AddScoped<IDepartmentRepository, DepartmentRepository>();   // D1
+builder.Services.AddScoped<IDisbursementRepository, DisbursementRepository>();   // D2
 
 // A3 Google sign-in: settings (secret from gitignored config only) + a typed HttpClient for
 // the server-to-server code exchange with Google.
