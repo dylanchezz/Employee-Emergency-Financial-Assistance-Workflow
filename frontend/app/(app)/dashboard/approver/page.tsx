@@ -6,6 +6,7 @@ import { apiFetch } from "@/app/lib/api";
 import AwaitingDisbursement from "@/app/components/AwaitingDisbursement";
 import { useSession } from "@/app/lib/session";
 import { statusLabel, statusStyle } from "@/app/lib/requestStatus";
+import { LOGIN_PATH } from "@/app/lib/auth";
 
 type QueueItem = {
   requestId: number;
@@ -72,7 +73,7 @@ export default function ApproverDashboard() {
       setLoading(false);
       if (!result.ok) {
         if (result.status === 401) {
-          router.replace("/");
+          router.replace(LOGIN_PATH);
           return;
         }
         setError(result.error);

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import DeletionRequestsQueue from "@/app/components/DeletionRequestsQueue";
 import { apiFetch } from "@/app/lib/api";
 import { useSession } from "@/app/lib/session";
+import { LOGIN_PATH } from "@/app/lib/auth";
 
 // The six roles the backend/schema allow. The dropdowns offer exactly these.
 const ROLES = [
@@ -100,7 +101,7 @@ export default function AdminDashboard() {
     setLoading(false);
     if (!result.ok) {
       if (result.status === 401) {
-        router.replace("/");
+        router.replace(LOGIN_PATH);
         return;
       }
       setError(result.error);

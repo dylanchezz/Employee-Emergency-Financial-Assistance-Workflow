@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { apiFetch } from "@/app/lib/api";
 import { statusLabel } from "@/app/lib/requestStatus";
+import { LOGIN_PATH } from "@/app/lib/auth";
 
 // The same categories the new-request form offers, so a resubmit can change category too.
 const RESUBMIT_CATEGORIES = [
@@ -173,7 +174,7 @@ export default function RequestDetailPage() {
     setLoading(false);
     if (!result.ok) {
       if (result.status === 401) {
-        router.replace("/");
+        router.replace(LOGIN_PATH);
         return;
       }
       setError(result.error);
@@ -185,7 +186,7 @@ export default function RequestDetailPage() {
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
-      router.replace("/");
+      router.replace(LOGIN_PATH);
       return;
     }
     load();

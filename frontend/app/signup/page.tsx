@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import GoogleSignInButton from "../components/GoogleSignInButton";
+import { LOGIN_PATH } from "@/app/lib/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -70,7 +71,7 @@ export default function SignupPage() {
       }
 
       // Success: send them to the login page with a hint to sign in.
-      router.push("/?signup=success");
+      router.push(`${LOGIN_PATH}?signup=success`);
     } catch {
       setError("Cannot reach the server. Is the backend running?");
     } finally {
@@ -90,9 +91,10 @@ export default function SignupPage() {
           }}
         />
         <div className="relative">
-          <span className="font-[family-name:var(--font-heading)] text-xl font-semibold tracking-tight">
-            Welfare Assistance
-          </span>
+          {/* Phase 4: the brand links back to the public landing page. */}
+          <Link href="/" className="font-[family-name:var(--font-heading)] text-xl font-semibold tracking-tight hover:underline">
+            Employee Welfare Portal
+          </Link>
         </div>
         <div className="relative max-w-sm">
           <h1 className="font-[family-name:var(--font-heading)] text-4xl font-bold leading-tight">
@@ -111,6 +113,10 @@ export default function SignupPage() {
       {/* Form panel. */}
       <section className="flex items-center justify-center p-8 bg-surface">
         <form onSubmit={handleSubmit} className="w-full max-w-sm">
+          {/* Phase 4: a way back to the landing page (the red brand panel is hidden on phones). */}
+          <Link href="/" className="mb-6 inline-block text-sm text-ink-soft transition hover:text-ink">
+            ← Back to home
+          </Link>
           <h2 className="font-[family-name:var(--font-heading)] text-2xl font-semibold text-ink">
             Sign up
           </h2>
@@ -226,7 +232,7 @@ export default function SignupPage() {
 
           <p className="mt-6 text-sm text-ink-soft">
             Already have an account?{" "}
-            <Link href="/" className="font-medium text-kq-red hover:underline">
+            <Link href={LOGIN_PATH} className="font-medium text-kq-red hover:underline">
               Sign in
             </Link>
           </p>

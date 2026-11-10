@@ -14,7 +14,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Welfare Assistance System",
+  title: "Employee Welfare Portal",
   description: "Employee emergency financial assistance workflow.",
 };
 
