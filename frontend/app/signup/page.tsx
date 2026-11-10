@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import GoogleSignInButton from "../components/GoogleSignInButton";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -165,6 +166,8 @@ export default function SignupPage() {
           >
             {loading ? "Creating account…" : "Create account"}
           </button>
+          {/* A3: same endpoint as on the login page — a first Google sign-in creates the account. */}
+          <GoogleSignInButton label="Sign up with Google" />
 
           <p className="mt-6 text-sm text-ink-soft">
             Already have an account?{" "}

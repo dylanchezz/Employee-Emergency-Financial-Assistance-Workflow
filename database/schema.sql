@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS two_factor_codes CASCADE;
 DROP TABLE IF EXISTS audit_logs      CASCADE;
 DROP TABLE IF EXISTS escalations      CASCADE;
 DROP TABLE IF EXISTS notifications    CASCADE;
@@ -17,7 +18,8 @@ CREATE TABLE users (
     user_id        SERIAL PRIMARY KEY,
     name           VARCHAR(150) NOT NULL,
     email          VARCHAR(255) NOT NULL UNIQUE,
-    password_hash  VARCHAR(255) NOT NULL,
+    -- NULL for a Google-only account (A3, migration 010).
+    password_hash  VARCHAR(255),
     role           VARCHAR(50)  NOT NULL
                    CHECK (role IN (
                        'Employee',
@@ -28,7 +30,18 @@ CREATE TABLE users (
                        'System Administrator'
                    )),
     department     VARCHAR(100),
-    created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- A2 Email 2FA opt-in flag (migration 009). Off by default.
+    two_factor_enabled BOOLEAN NOT NULL DEFAULT false,
+    -- A3 Google sign-in identity (migration 010): provider + the provider's stable subject id.
+    oauth_provider VARCHAR(20),
+    oauth_subject  VARCHAR(255),
+    CONSTRAINT users_oauth_pair_chk
+        CHECK ((oauth_provider IS NULL) = (oauth_subject IS NULL)),
+    CONSTRAINT users_has_login_method_chk
+        CHECK (password_hash IS NOT NULL OR oauth_subject IS NOT NULL),
+    CONSTRAINT users_oauth_identity_key
+        UNIQUE (oauth_provider, oauth_subject)
 );
 
 
@@ -192,6 +205,21 @@ CREATE TABLE audit_logs (
 );
 
 
+-- two_factor_codes
+-- A2 Email 2FA (migration 009): short-lived one-time login codes. Only the BCrypt
+-- hash of the 6-digit code is stored. Throwaway rows, so CASCADE with the user.
+
+CREATE TABLE two_factor_codes (
+    code_id        SERIAL PRIMARY KEY,
+    user_id        INTEGER NOT NULL
+                   REFERENCES users(user_id) ON DELETE CASCADE,
+    code_hash      TEXT NOT NULL,
+    expires_at     TIMESTAMPTZ NOT NULL,
+    attempts       INTEGER NOT NULL DEFAULT 0,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+
 -- Helpful indexes for common lookups (foreign keys used in queries/joins)
 
 CREATE INDEX idx_requests_user       ON welfare_requests(user_id);
@@ -199,3 +227,4 @@ CREATE INDEX idx_requests_status     ON welfare_requests(status);
 CREATE INDEX idx_approvals_request   ON approvals(request_id);
 CREATE INDEX idx_notifications_recipient ON notifications(recipient_id);
 CREATE INDEX idx_audit_request       ON audit_logs(request_id);
+CREATE INDEX idx_two_factor_codes_user_id ON two_factor_codes(user_id);

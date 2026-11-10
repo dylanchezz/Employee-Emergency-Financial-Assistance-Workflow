@@ -7,6 +7,11 @@ namespace backend.Data;
 public interface IUserRepository
 {
     Task<User?> GetByEmailAsync(string email);
+    Task<User?> GetByIdAsync(int userId);
+    Task<bool> SetTwoFactorEnabledAsync(int userId, bool enabled);
+    Task<User?> GetByOAuthAsync(string provider, string subject);
+    Task<bool> EmailExistsAsync(string email);
+    Task<int> CreateOAuthUserAsync(string name, string email, string provider, string subject);
     Task<int> CreateAsync(User user);
     Task<string?> GetNameByIdAsync(int userId);
     Task<string?> GetRoleByIdAsync(int userId);
@@ -32,11 +37,85 @@ public class UserRepository : IUserRepository
                    password_hash    AS PasswordHash,
                    role             AS Role,
                    department       AS Department,
-                   created_at       AS CreatedAt
+                   created_at       AS CreatedAt,
+                   two_factor_enabled AS TwoFactorEnabled,
+                   oauth_provider   AS OAuthProvider,
+                   oauth_subject    AS OAuthSubject
             FROM users
             WHERE email = @Email;";
         using var connection = _factory.CreateConnection();
         return await connection.QuerySingleOrDefaultAsync<User>(sql, new {Email = email});
+    }
+
+    // Full user by id (A2) — the 2FA verify step only has the user id (from the pre-auth
+    // token) and needs the name/role/email to mint the real app JWT.
+    public async Task<User?> GetByIdAsync(int userId)
+    {
+        const string sql = @"
+            SELECT user_id          AS UserId,
+                   name             AS Name,
+                   email            AS Email,
+                   password_hash    AS PasswordHash,
+                   role             AS Role,
+                   department       AS Department,
+                   created_at       AS CreatedAt,
+                   two_factor_enabled AS TwoFactorEnabled,
+                   oauth_provider   AS OAuthProvider,
+                   oauth_subject    AS OAuthSubject
+            FROM users
+            WHERE user_id = @UserId;";
+        using var connection = _factory.CreateConnection();
+        return await connection.QuerySingleOrDefaultAsync<User>(sql, new { UserId = userId });
+    }
+
+    // A3: the account linked to an external identity (provider + stable subject id), if any.
+    public async Task<User?> GetByOAuthAsync(string provider, string subject)
+    {
+        const string sql = @"
+            SELECT user_id          AS UserId,
+                   name             AS Name,
+                   email            AS Email,
+                   password_hash    AS PasswordHash,
+                   role             AS Role,
+                   department       AS Department,
+                   created_at       AS CreatedAt,
+                   two_factor_enabled AS TwoFactorEnabled,
+                   oauth_provider   AS OAuthProvider,
+                   oauth_subject    AS OAuthSubject
+            FROM users
+            WHERE oauth_provider = @Provider AND oauth_subject = @Subject;";
+        using var connection = _factory.CreateConnection();
+        return await connection.QuerySingleOrDefaultAsync<User>(sql, new { Provider = provider, Subject = subject });
+    }
+
+    // A3 collision check. Case-INsensitive on purpose: "Jane@Gmail.com" and "jane@gmail.com"
+    // are the same inbox, so a Google sign-in must not create a second account beside either.
+    public async Task<bool> EmailExistsAsync(string email)
+    {
+        const string sql = "SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = lower(@Email));";
+        using var connection = _factory.CreateConnection();
+        return await connection.ExecuteScalarAsync<bool>(sql, new { Email = email });
+    }
+
+    // A3: create a Google-only account — least-privileged Employee, no password, department
+    // null until D1's "choose department" step (A25). Returns the new user id.
+    public async Task<int> CreateOAuthUserAsync(string name, string email, string provider, string subject)
+    {
+        const string sql = @"
+            INSERT INTO users (name, email, password_hash, role, department, oauth_provider, oauth_subject)
+            VALUES (@Name, @Email, NULL, 'Employee', NULL, @Provider, @Subject)
+            RETURNING user_id;";
+        using var connection = _factory.CreateConnection();
+        return await connection.ExecuteScalarAsync<int>(sql,
+            new { Name = name, Email = email, Provider = provider, Subject = subject });
+    }
+
+    // Turn Email 2FA on/off for one user (A2). Returns false if no such user.
+    public async Task<bool> SetTwoFactorEnabledAsync(int userId, bool enabled)
+    {
+        const string sql = "UPDATE users SET two_factor_enabled = @Enabled WHERE user_id = @UserId;";
+        using var connection = _factory.CreateConnection();
+        return await connection.ExecuteAsync(sql, new { UserId = userId, Enabled = enabled }) > 0;
     }
     public async Task<int> CreateAsync(User user)
     {

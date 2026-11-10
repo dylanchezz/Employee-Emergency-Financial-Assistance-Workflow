@@ -3,18 +3,16 @@
 import { useState, useEffect, Suspense  } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import {
+  completeLogin,
+  saveTwoFactorChallenge,
+  takeLoginNotice,
+  type AuthResponse,
+  type TwoFactorChallenge,
+} from "./lib/auth";
+import GoogleSignInButton from "./components/GoogleSignInButton";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-// Map each role to its dashboard route.
-const ROLE_ROUTES: Record<string, string> = {
-  "Employee": "/dashboard/employee",
-  "Department Supervisor": "/dashboard/approver",
-  "Welfare Officer": "/dashboard/approver",
-  "Finance Officer": "/dashboard/approver",
-  "HR Manager": "/dashboard/approver",
-  "System Administrator": "/dashboard/admin",
-};
 
 function LoginForm() {
   const router = useRouter();
@@ -31,6 +29,12 @@ function LoginForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // A2: if the 2FA step bounced us back here (too many wrong codes, timed out), say why.
+  useEffect(() => {
+    const message = takeLoginNotice();
+    if (message) setError(message);
+  }, []);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -44,22 +48,30 @@ function LoginForm() {
       });
 
       if (res.status === 401) {
-        setError("Incorrect email or password.");
+        // A3: a Google-only account gets a specific message ("uses Google sign-in");
+        // otherwise the deliberately vague one.
+        const body = await res.json().catch(() => null);
+        setError(body?.error ?? "Incorrect email or password.");
         return;
       }
       if (!res.ok) {
-        setError("Something went wrong. Please try again.");
+        // A2: e.g. 503 "couldn't send your sign-in code" — show the server's message if any.
+        const body = await res.json().catch(() => null);
+        setError(body?.error ?? "Something went wrong. Please try again.");
         return;
       }
 
-      const data = await res.json();
-      // Store the token and role for later authenticated requests.
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("role", data.role);
-      localStorage.setItem("name", data.name);
+      const data = (await res.json()) as AuthResponse | TwoFactorChallenge;
 
-      const destination = ROLE_ROUTES[data.role] ?? "/dashboard/employee";
-      router.push(destination);
+      // A2: an enrolled account gets a code challenge instead of the real token.
+      if ("twoFactorRequired" in data && data.twoFactorRequired) {
+        saveTwoFactorChallenge(data);
+        router.push("/verify-2fa");
+        return;
+      }
+
+      // One-step login (not enrolled): store the token and go to the dashboard.
+      router.push(completeLogin(data as AuthResponse));
     } catch {
       setError("Cannot reach the server. Is the backend running?");
     } finally {
@@ -156,6 +168,7 @@ function LoginForm() {
           >
             {loading ? "Signing in…" : "Sign in"}
           </button>
+          <GoogleSignInButton />
                     <p className="mt-6 text-sm text-ink-soft">
             Don&apos;t have an account?{" "}
             <Link href="/signup" className="font-medium text-kq-red hover:underline">

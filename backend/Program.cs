@@ -50,6 +50,15 @@ builder.Services.AddHostedService<EscalationWorker>();
 builder.Services.AddScoped<IAuditRepository, AuditRepository>();
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<ITwoFactorCodeRepository, TwoFactorCodeRepository>();
+
+// A3 Google sign-in: settings (secret from gitignored config only) + a typed HttpClient for
+// the server-to-server code exchange with Google.
+builder.Services.Configure<GoogleAuthSettings>(builder.Configuration.GetSection("GoogleAuth"));
+builder.Services.AddHttpClient<IGoogleAuthService, GoogleAuthService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 
 //Typed HttpClient for FastAPI model service
 var mlBaseUrl = builder.Configuration["MlService:BaseUrl"]
@@ -75,9 +84,38 @@ builder.Services.AddAuthentication("Bearer")
             IssuerSigningKey = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(jwtSettings.Secret))
         };
+    })
+    // A2 Email 2FA: a SECOND bearer scheme that accepts only the pre-auth token (audience
+    // "verify-2fa"). "Bearer" above stays the default scheme and expects the app audience, so a
+    // pre-auth token fails everywhere except the two endpoints that opt into this scheme.
+    // The reverse also holds: a real app JWT has the wrong audience for this scheme.
+    .AddJwtBearer(TwoFactorPolicy.PreAuthScheme, options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidAudience = TwoFactorPolicy.PreAuthAudience,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwtSettings.Secret)),
+            // The default 5-minute ClockSkew (seen in the A24 JWT test) would stretch a 10-minute
+            // pre-auth token to 15. Issuer and validator are the same server, so no skew is needed.
+            ClockSkew = TimeSpan.Zero,
+        };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Used ONLY by /verify-2fa and /resend-2fa: authenticate with the PreAuth scheme and
+    // require the twofa_pending claim (belt and braces on top of the audience check).
+    options.AddPolicy(TwoFactorPolicy.PreAuthPolicy, policy => policy
+        .AddAuthenticationSchemes(TwoFactorPolicy.PreAuthScheme)
+        .RequireAuthenticatedUser()
+        .RequireClaim(TwoFactorPolicy.PendingClaim, "true"));
+});
 
 //Allow the Next.js dev frontend to call this API.
 builder.Services.AddCors(options =>
@@ -127,6 +165,8 @@ app.MapGet("/api/health/db", async (IDbConnectionFactory factory) =>
 });
 
 app.MapAuthEndpoints();
+app.MapTwoFactorEndpoints();
+app.MapGoogleAuthEndpoints();
 app.MapProtectedTestEndpoints();
 app.MapRequestEndpoints();
 app.MapNotificationEndpoints();

@@ -63,3 +63,4 @@ Thumbs.db
 *.log
 logs/
 ml-service/data/*.csv 
+Leftovers/

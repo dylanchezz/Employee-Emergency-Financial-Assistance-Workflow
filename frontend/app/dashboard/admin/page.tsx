@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import NotificationBell from "../../components/NotificationBell";
+import TwoFactorToggle from "../../components/TwoFactorToggle";
 import { apiFetch } from "../../lib/api";
 
 // The six roles the backend/schema allow. The dropdowns offer exactly these.
@@ -203,6 +204,7 @@ export default function AdminDashboard() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <TwoFactorToggle />
             <NotificationBell />
             <button
               onClick={handleLogout}

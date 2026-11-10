@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import NotificationBell from "../../components/NotificationBell";
+import TwoFactorToggle from "../../components/TwoFactorToggle";
 
 type MyRequest = {
   requestId: number;
@@ -76,13 +77,16 @@ export default function EmployeeDashboard() {
             </h1>
             <p className="mt-2 text-ink-soft">Signed in as {name}</p>
           </div>
-          <NotificationBell />
-          <button
-            onClick={handleLogout}
-            className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas"
-          >
-            Sign out
-          </button>
+          <div className="flex items-center gap-3">
+            <TwoFactorToggle />
+            <NotificationBell />
+            <button
+              onClick={handleLogout}
+              className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
 
         <div className="mt-8 flex items-center justify-between rounded-2xl border border-line bg-surface p-6">
