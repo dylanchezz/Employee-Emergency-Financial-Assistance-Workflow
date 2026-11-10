@@ -53,6 +53,7 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ITwoFactorCodeRepository, TwoFactorCodeRepository>();
 builder.Services.AddScoped<IDepartmentRepository, DepartmentRepository>();   // D1
 builder.Services.AddScoped<IDisbursementRepository, DisbursementRepository>();   // D2
+builder.Services.AddScoped<IAccountDeletionRepository, AccountDeletionRepository>();   // C2
 
 // A3 Google sign-in: settings (secret from gitignored config only) + a typed HttpClient for
 // the server-to-server code exchange with Google.
@@ -170,6 +171,7 @@ app.MapAuthEndpoints();
 app.MapTwoFactorEndpoints();
 app.MapGoogleAuthEndpoints();
 app.MapDepartmentEndpoints();   // D1
+app.MapAccountDeletionEndpoints();   // C2
 app.MapProtectedTestEndpoints();
 app.MapRequestEndpoints();
 app.MapNotificationEndpoints();

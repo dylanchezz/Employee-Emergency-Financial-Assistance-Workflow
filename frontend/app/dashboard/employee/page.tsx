@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import NotificationBell from "../../components/NotificationBell";
 import TwoFactorToggle from "../../components/TwoFactorToggle";
+import AccountDeletionCard from "../../components/AccountDeletionCard";
 import CompleteProfileCard from "../../components/CompleteProfileCard";
 
 type MyRequest = {
@@ -173,6 +174,8 @@ export default function EmployeeDashboard() {
             ))}
           </div>
         )}
+        {/* C2: request account deletion (minimal; folds into the Profile screen, C1). */}
+        <AccountDeletionCard />
       </div>
     </main>
   );

@@ -132,6 +132,9 @@ public static class AdminEndpoints
                 role = u.Role,
                 department = u.Department,
                 createdAt = u.CreatedAt,
+                // C2: deactivated accounts stay listed (history kept) — the UI marks them.
+                isActive = u.IsActive,
+                deactivatedAt = u.DeactivatedAt,
             });
             return Results.Ok(list);
         });

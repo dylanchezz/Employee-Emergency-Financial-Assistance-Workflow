@@ -102,6 +102,15 @@ public static class GoogleAuthEndpoints
                 }
             }
 
+            // C2: a deactivated (soft-deleted) Google account can't sign in either. Its row still
+            // exists (history kept), so it IS found by `sub` above — and stops here, rather than
+            // being treated as a new user. (A fresh sign-up can't reuse it: the sub is still taken.)
+            if (!user.IsActive)
+            {
+                return Results.Json(new { error = "This account has been deactivated." },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             // No email 2FA step here (A25): Google already authenticated the person (and applies
             // its own MFA), so the A2 two-step login is for password logins only.
             var token = tokenService.CreateToken(user);

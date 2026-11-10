@@ -30,6 +30,12 @@ public interface IUserRepository
     // the request's owner (who can never act on it — A24 #2), and — for the department-scoped
     // tier — only those in the owner's department.
     Task<IEnumerable<int>> GetApproverIdsForRequestAsync(int requestId, string role, bool sameDepartmentAsOwner);
+
+    // C2: how many ACTIVE System Administrators exist (the last-admin guard).
+    Task<int> CountActiveAdminsAsync();
+
+    // C2 follow-up: admin reactivates a deactivated account. True only if it WAS deactivated.
+    Task<bool> ReactivateAsync(int userId);
 }
 
 public class UserRepository : IUserRepository
@@ -51,7 +57,9 @@ public class UserRepository : IUserRepository
                    created_at       AS CreatedAt,
                    two_factor_enabled AS TwoFactorEnabled,
                    oauth_provider   AS OAuthProvider,
-                   oauth_subject    AS OAuthSubject
+                   oauth_subject    AS OAuthSubject,
+                   is_active        AS IsActive,
+                   deactivated_at   AS DeactivatedAt
             FROM users
             WHERE email = @Email;";
         using var connection = _factory.CreateConnection();
@@ -72,7 +80,9 @@ public class UserRepository : IUserRepository
                    created_at       AS CreatedAt,
                    two_factor_enabled AS TwoFactorEnabled,
                    oauth_provider   AS OAuthProvider,
-                   oauth_subject    AS OAuthSubject
+                   oauth_subject    AS OAuthSubject,
+                   is_active        AS IsActive,
+                   deactivated_at   AS DeactivatedAt
             FROM users
             WHERE user_id = @UserId;";
         using var connection = _factory.CreateConnection();
@@ -92,7 +102,9 @@ public class UserRepository : IUserRepository
                    created_at       AS CreatedAt,
                    two_factor_enabled AS TwoFactorEnabled,
                    oauth_provider   AS OAuthProvider,
-                   oauth_subject    AS OAuthSubject
+                   oauth_subject    AS OAuthSubject,
+                   is_active        AS IsActive,
+                   deactivated_at   AS DeactivatedAt
             FROM users
             WHERE oauth_provider = @Provider AND oauth_subject = @Subject;";
         using var connection = _factory.CreateConnection();
@@ -156,7 +168,8 @@ public class UserRepository : IUserRepository
     // All user ids with a given role — used to notify every approver at a tier.
     public async Task<IEnumerable<int>> GetIdsByRoleAsync(string role)
     {
-        const string sql = "SELECT user_id FROM users WHERE role = @Role;";
+        // C2: only ACTIVE accounts — a deactivated admin/approver must stop receiving alerts.
+        const string sql = "SELECT user_id FROM users WHERE role = @Role AND is_active;";
         using var connection = _factory.CreateConnection();
         return await connection.QueryAsync<int>(sql, new { Role = role });
     }
@@ -179,7 +192,9 @@ public class UserRepository : IUserRepository
                    email      AS Email,
                    role       AS Role,
                    department AS Department,
-                   created_at AS CreatedAt
+                   created_at AS CreatedAt,
+                   is_active  AS IsActive,
+                   deactivated_at AS DeactivatedAt
             FROM users
             ORDER BY role, name;";
         using var connection = _factory.CreateConnection();
@@ -234,9 +249,28 @@ public class UserRepository : IUserRepository
             JOIN users a ON a.role = @Role                 -- candidate approvers
             WHERE r.request_id = @RequestId
               AND a.user_id <> r.user_id                   -- never the owner (A24 #2 / #6)
+              AND a.is_active                              -- C2: never a deactivated account
               AND (NOT @SameDepartment OR a.department = o.department);";
         using var connection = _factory.CreateConnection();
         return await connection.QueryAsync<int>(sql,
             new { RequestId = requestId, Role = role, SameDepartment = sameDepartmentAsOwner });
+    }
+
+    public async Task<int> CountActiveAdminsAsync()
+    {
+        const string sql = "SELECT COUNT(*)::int FROM users WHERE role = 'System Administrator' AND is_active;";
+        using var connection = _factory.CreateConnection();
+        return await connection.ExecuteScalarAsync<int>(sql);
+    }
+
+    // Conditional write (WHERE NOT is_active): reactivating an already-active account is a no-op
+    // that reports false, and two admins pressing Reactivate together can't both "win".
+    public async Task<bool> ReactivateAsync(int userId)
+    {
+        const string sql = @"
+            UPDATE users SET is_active = true, deactivated_at = NULL
+            WHERE user_id = @UserId AND NOT is_active;";
+        using var connection = _factory.CreateConnection();
+        return await connection.ExecuteAsync(sql, new { UserId = userId }) > 0;
     }
 }
