@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import NotificationBell from "../../components/NotificationBell";
 import TwoFactorToggle from "../../components/TwoFactorToggle";
+import AccountDeletionCard from "../../components/AccountDeletionCard";
+import DeletionRequestsQueue from "../../components/DeletionRequestsQueue";
 import { apiFetch } from "../../lib/api";
 
 // The six roles the backend/schema allow. The dropdowns offer exactly these.
@@ -23,6 +25,7 @@ type AdminUser = {
   role: string;
   department: string;
   createdAt: string;
+  isActive: boolean;   // C2: false = deactivated (soft-deleted)
 };
 
 // D1: one row of the canonical departments list.
@@ -176,6 +179,24 @@ export default function AdminDashboard() {
     localStorage.removeItem("role");
     localStorage.removeItem("name");
     router.replace("/");
+  }
+
+  // C2 follow-up: reactivate a deactivated (soft-deleted) account.
+  async function reactivate(user: AdminUser) {
+    if (!window.confirm(`Reactivate ${user.name} (${user.email})? They will be able to sign in again.`)) return;
+    setMessage("");
+    setSavingId(user.userId);
+    const result = await apiFetch<{ notificationEmailSent: boolean }>(
+      `/admin/users/${user.userId}/reactivate`,
+      { method: "POST" }
+    );
+    setSavingId(null);
+    setMessage(
+      result.ok
+        ? `${user.name} has been reactivated.${result.data.notificationEmailSent ? " They were emailed." : ""}`
+        : result.error
+    );
+    loadUsers();
   }
 
   // Saves whatever changed on the row: role and/or (D1) department.
@@ -427,12 +448,13 @@ export default function AdminDashboard() {
 
         {/* Users table */}
         {!loading && !error && (
-          <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-surface">
+          // overflow-x-auto (not overflow-hidden): if the row is wider than the card, scroll
+          // sideways instead of silently clipping the action buttons.
+          <div className="mt-4 overflow-x-auto rounded-2xl border border-line bg-surface">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-line text-ink-soft">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Name</th>
-                  <th className="px-4 py-3 font-medium">Email</th>
+                  <th className="px-4 py-3 font-medium">User</th>
                   <th className="px-4 py-3 font-medium">Department</th>
                   <th className="px-4 py-3 font-medium">Role</th>
                   <th className="px-4 py-3" />
@@ -445,8 +467,20 @@ export default function AdminDashboard() {
                   const changed = selected !== u.role || selectedDept !== u.department;
                   return (
                     <tr key={u.userId} className="border-b border-line last:border-0">
-                      <td className="px-4 py-3 text-ink">{u.name}</td>
-                      <td className="px-4 py-3 text-ink-soft">{u.email}</td>
+                      {/* Name + email share one column (email underneath, may break at any
+                          character) so the row fits the card next to the two dropdowns and the
+                          action buttons — a long address used to push Reactivate out of view. */}
+                      <td className="px-4 py-3">
+                        <p className="text-ink">
+                          {u.name}
+                          {!u.isActive && (
+                            <span className="ml-2 whitespace-nowrap rounded-full bg-ink-soft/15 px-2 py-0.5 text-xs font-semibold text-ink-soft">
+                              Deactivated
+                            </span>
+                          )}
+                        </p>
+                        <p className="break-all text-xs text-ink-soft">{u.email}</p>
+                      </td>
                       <td className="px-4 py-3">
                         {/* D1: admin sets any user's department (users can only choose once). */}
                         <select
@@ -479,13 +513,26 @@ export default function AdminDashboard() {
                         </select>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => saveRole(u)}
-                          disabled={!changed || savingId === u.userId}
-                          className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-canvas disabled:opacity-40"
-                        >
-                          {savingId === u.userId ? "Saving…" : "Save"}
-                        </button>
+                        {/* Buttons stacked (not side by side) so the actions column stays narrow. */}
+                        <div className="flex flex-col items-end gap-1.5">
+                          <button
+                            onClick={() => saveRole(u)}
+                            disabled={!changed || savingId === u.userId}
+                            className="whitespace-nowrap rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-canvas disabled:opacity-40"
+                          >
+                            {savingId === u.userId ? "Saving…" : "Save"}
+                          </button>
+                          {/* C2 follow-up: undo a deactivation (soft-delete kept everything). */}
+                          {!u.isActive && (
+                            <button
+                              onClick={() => reactivate(u)}
+                              disabled={savingId === u.userId}
+                              className="whitespace-nowrap rounded-lg border border-low px-3 py-1.5 text-sm font-medium text-low transition hover:bg-low hover:text-white disabled:opacity-40"
+                            >
+                              Reactivate
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -539,6 +586,9 @@ export default function AdminDashboard() {
           </button>
           {deptMsg && <p className="text-sm text-ink">{deptMsg}</p>}
         </div>
+
+        {/* C2: account-deletion requests (approve = soft-delete). */}
+        <DeletionRequestsQueue onChanged={loadUsers} />
 
         {/* Validation rules — read-only view of the current thresholds. */}
         {rules.length > 0 && (
@@ -611,6 +661,8 @@ export default function AdminDashboard() {
             </div>
           </>
         )}
+        {/* C2: request account deletion (minimal; folds into the Profile screen, C1). */}
+        <AccountDeletionCard />
       </div>
     </main>
   );

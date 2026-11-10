@@ -18,5 +18,8 @@ public class User
     // A3 external identity, e.g. ("google", Google's stable `sub`). Both null for password accounts.
     public string? OAuthProvider {get; set; }
     public string? OAuthSubject {get; set; }
+    // C2 soft-delete (migration 013): false = deactivated — can't sign in by any path; history kept.
+    public bool IsActive {get; set; } = true;
+    public DateTime? DeactivatedAt {get; set; }
 
 }

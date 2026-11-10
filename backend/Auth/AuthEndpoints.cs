@@ -86,6 +86,16 @@ public static class AuthEndpoints
                 return Results.Unauthorized();
             }
 
+            // C2: a deactivated (soft-deleted) account can't sign in. Checked AFTER the password,
+            // so only someone who knows the password learns the account is deactivated (anyone
+            // else still gets the vague 401 above), and BEFORE both the real token and the 2FA
+            // step — so a deactivated 2FA user isn't even emailed a code.
+            if (!user.IsActive)
+            {
+                return Results.Json(new { error = "This account has been deactivated." },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             // A2 Email 2FA: an enrolled user gets a code by email and a pre-auth token —
             // NOT the real JWT. The real token is only minted by /verify-2fa after a correct code.
             if (user.TwoFactorEnabled)

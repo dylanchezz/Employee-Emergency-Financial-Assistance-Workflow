@@ -31,6 +31,17 @@ public static class TwoFactorEndpoints
         {
             var userId = CallerId(principal);
 
+            // C2: the account may have been deactivated AFTER the password step issued this
+            // pre-auth token (it lives up to 10 minutes). Refuse before any code handling — no
+            // more guesses, and the pending code is thrown away.
+            var account = await users.GetByIdAsync(userId);
+            if (account is null || !account.IsActive)
+            {
+                await codes.DeleteAllForUserAsync(userId);
+                return Results.Json(new { error = "This account has been deactivated." },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
             // Shape check first. A malformed entry isn't a real guess, so it doesn't use an attempt.
             var entered = request.Code?.Trim() ?? string.Empty;
             if (entered.Length != TwoFactorPolicy.CodeLength || !entered.All(char.IsAsciiDigit))
@@ -74,6 +85,12 @@ public static class TwoFactorEndpoints
                 {
                     return StartOver("This account no longer exists.");
                 }
+                // C2, at the exact mint point too (deactivated in the milliseconds since the check above).
+                if (!user.IsActive)
+                {
+                    return Results.Json(new { error = "This account has been deactivated." },
+                        statusCode: StatusCodes.Status403Forbidden);
+                }
 
                 // The SAME real app JWT a one-step login gets — nothing downstream changes.
                 var token = tokenService.CreateToken(user);
@@ -104,6 +121,15 @@ public static class TwoFactorEndpoints
             IEmailService email) =>
         {
             var userId = CallerId(principal);
+
+            // C2: a deactivated account gets no more codes emailed.
+            var account = await users.GetByIdAsync(userId);
+            if (account is null || !account.IsActive)
+            {
+                await codes.DeleteAllForUserAsync(userId);
+                return Results.Json(new { error = "This account has been deactivated." },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
 
             var (count, secondsSinceLatest) = await codes.GetIssueStatsAsync(userId);
             if (count == 0)

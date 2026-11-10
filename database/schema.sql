@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS account_deletion_requests CASCADE;
 DROP TABLE IF EXISTS disbursements    CASCADE;
 DROP TABLE IF EXISTS two_factor_codes CASCADE;
 DROP TABLE IF EXISTS audit_logs      CASCADE;
@@ -54,6 +55,9 @@ CREATE TABLE users (
     -- A3 Google sign-in identity (migration 010): provider + the provider's stable subject id.
     oauth_provider VARCHAR(20),
     oauth_subject  VARCHAR(255),
+    -- C2 (migration 013): soft-delete. A deactivated account can't sign in; its history stays.
+    is_active      BOOLEAN NOT NULL DEFAULT true,
+    deactivated_at TIMESTAMPTZ,
     CONSTRAINT users_oauth_pair_chk
         CHECK ((oauth_provider IS NULL) = (oauth_subject IS NULL)),
     CONSTRAINT users_has_login_method_chk
@@ -241,6 +245,29 @@ CREATE TABLE disbursements (
     note             TEXT,
     disbursed_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+
+-- account_deletion_requests
+-- C2 (migration 013): a user's request to delete their account and the admin's decision.
+-- Approval DEACTIVATES the user (users.is_active = false) - never a hard delete, so the
+-- FR-11 audit trail survives. At most one Pending request per user (partial unique index).
+
+CREATE TABLE account_deletion_requests (
+    deletion_id   SERIAL PRIMARY KEY,
+    user_id       INTEGER NOT NULL
+                  REFERENCES users(user_id) ON DELETE CASCADE,
+    status        VARCHAR(20) NOT NULL DEFAULT 'Pending'
+                  CHECK (status IN ('Pending', 'Approved', 'Rejected', 'Cancelled')),
+    reason        TEXT,
+    requested_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    decided_by    INTEGER
+                  REFERENCES users(user_id) ON DELETE SET NULL,
+    decided_at    TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX uq_account_deletion_one_pending
+    ON account_deletion_requests (user_id)
+    WHERE status = 'Pending';
 
 
 -- two_factor_codes
