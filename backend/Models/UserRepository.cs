@@ -19,6 +19,17 @@ public interface IUserRepository
     Task<(string Name, string Email)?> GetContactByIdAsync(int userId);
     Task<IEnumerable<User>> GetAllAsync();
     Task UpdateRoleAsync(int userId, string role);
+
+    // ---- D1 department-scoped routing ----
+    Task<string?> GetDepartmentByIdAsync(int userId);
+    // Admin: set any user's department (the FK guarantees it exists). False = no such user.
+    Task<bool> SetDepartmentAsync(int userId, string department);
+    // Self-service, ONE-TIME: only succeeds while the user is still "Unassigned".
+    Task<bool> SetDepartmentIfUnassignedAsync(int userId, string department);
+    // The approvers who should hear about a request at a tier: everyone with that role, minus
+    // the request's owner (who can never act on it — A24 #2), and — for the department-scoped
+    // tier — only those in the owner's department.
+    Task<IEnumerable<int>> GetApproverIdsForRequestAsync(int requestId, string role, bool sameDepartmentAsOwner);
 }
 
 public class UserRepository : IUserRepository
@@ -97,13 +108,14 @@ public class UserRepository : IUserRepository
         return await connection.ExecuteScalarAsync<bool>(sql, new { Email = email });
     }
 
-    // A3: create a Google-only account — least-privileged Employee, no password, department
-    // null until D1's "choose department" step (A25). Returns the new user id.
+    // A3: create a Google-only account — least-privileged Employee, no password. Department is
+    // "Unassigned" (D1, migration 011) until the user picks one in the complete-profile step,
+    // which they must do before they can submit a request. Returns the new user id.
     public async Task<int> CreateOAuthUserAsync(string name, string email, string provider, string subject)
     {
         const string sql = @"
             INSERT INTO users (name, email, password_hash, role, department, oauth_provider, oauth_subject)
-            VALUES (@Name, @Email, NULL, 'Employee', NULL, @Provider, @Subject)
+            VALUES (@Name, @Email, NULL, 'Employee', 'Unassigned', @Provider, @Subject)
             RETURNING user_id;";
         using var connection = _factory.CreateConnection();
         return await connection.ExecuteScalarAsync<int>(sql,
@@ -181,5 +193,50 @@ public class UserRepository : IUserRepository
         const string sql = "UPDATE users SET role = @Role WHERE user_id = @UserId;";
         using var connection = _factory.CreateConnection();
         await connection.ExecuteAsync(sql, new { UserId = userId, Role = role });
+    }
+
+    // ---- D1 department-scoped routing ----
+
+    // Read fresh from the DB (not a JWT claim): an admin moving someone to another department
+    // takes effect on their very next request, with no stale token in between.
+    public async Task<string?> GetDepartmentByIdAsync(int userId)
+    {
+        const string sql = "SELECT department FROM users WHERE user_id = @UserId;";
+        using var connection = _factory.CreateConnection();
+        return await connection.QuerySingleOrDefaultAsync<string>(sql, new { UserId = userId });
+    }
+
+    public async Task<bool> SetDepartmentAsync(int userId, string department)
+    {
+        const string sql = "UPDATE users SET department = @Department WHERE user_id = @UserId;";
+        using var connection = _factory.CreateConnection();
+        return await connection.ExecuteAsync(sql, new { UserId = userId, Department = department }) > 0;
+    }
+
+    // Conditional write (the A24 fix-1 pattern): the WHERE re-checks "still Unassigned" at
+    // write time, so a self-service choice can only ever happen once, even with parallel calls.
+    public async Task<bool> SetDepartmentIfUnassignedAsync(int userId, string department)
+    {
+        const string sql = @"
+            UPDATE users SET department = @Department
+            WHERE user_id = @UserId AND department = 'Unassigned';";
+        using var connection = _factory.CreateConnection();
+        return await connection.ExecuteAsync(sql, new { UserId = userId, Department = department }) > 0;
+    }
+
+    public async Task<IEnumerable<int>> GetApproverIdsForRequestAsync(
+        int requestId, string role, bool sameDepartmentAsOwner)
+    {
+        const string sql = @"
+            SELECT a.user_id
+            FROM welfare_requests r
+            JOIN users o ON o.user_id = r.user_id          -- the request's owner
+            JOIN users a ON a.role = @Role                 -- candidate approvers
+            WHERE r.request_id = @RequestId
+              AND a.user_id <> r.user_id                   -- never the owner (A24 #2 / #6)
+              AND (NOT @SameDepartment OR a.department = o.department);";
+        using var connection = _factory.CreateConnection();
+        return await connection.QueryAsync<int>(sql,
+            new { RequestId = requestId, Role = role, SameDepartment = sameDepartmentAsOwner });
     }
 }

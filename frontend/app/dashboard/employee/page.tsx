@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import NotificationBell from "../../components/NotificationBell";
 import TwoFactorToggle from "../../components/TwoFactorToggle";
+import CompleteProfileCard from "../../components/CompleteProfileCard";
 
 type MyRequest = {
   requestId: number;
@@ -36,6 +37,10 @@ export default function EmployeeDashboard() {
   const [requests, setRequests] = useState<MyRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // D1: true while the account's department is still "Unassigned" — submitting is blocked
+  // (the backend enforces it; this just disables the button and explains why).
+  const [needsDepartment, setNeedsDepartment] = useState(false);
+  const handleProfileStatus = useCallback((needs: boolean) => setNeedsDepartment(needs), []);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -89,6 +94,8 @@ export default function EmployeeDashboard() {
           </div>
         </div>
 
+        <CompleteProfileCard onStatus={handleProfileStatus} />
+
         <div className="mt-8 flex items-center justify-between rounded-2xl border border-line bg-surface p-6">
           <div>
             <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
@@ -100,7 +107,9 @@ export default function EmployeeDashboard() {
           </div>
           <button
             onClick={() => router.push("/requests/new")}
-            className="rounded-lg bg-kq-red px-5 py-2.5 font-medium text-white transition hover:bg-kq-red-deep"
+            disabled={needsDepartment}
+            title={needsDepartment ? "Choose your department first (above)." : undefined}
+            className="rounded-lg bg-kq-red px-5 py-2.5 font-medium text-white transition hover:bg-kq-red-deep disabled:cursor-not-allowed disabled:opacity-50"
           >
             + New request
           </button>

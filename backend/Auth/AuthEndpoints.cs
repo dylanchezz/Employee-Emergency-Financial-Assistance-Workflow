@@ -14,7 +14,8 @@ public static class AuthEndpoints
         //Signup that always creates an employee
         group.MapPost("/signup", async (
             SignupRequest request,
-            IUserRepository users) =>
+            IUserRepository users,
+            IDepartmentRepository departments) =>
         {
             //Basic Input Validation
             if (string.IsNullOrWhiteSpace(request.Name) || 
@@ -22,6 +23,15 @@ public static class AuthEndpoints
                 string.IsNullOrWhiteSpace(request.Password))
             {
                 return Results.BadRequest(new {error = "Name, email, and password are required"});
+            }
+            // D1: department is now REQUIRED and must come from the canonical list (it drives
+            // tier-1 routing). "Unassigned" is a placeholder state, not a valid choice.
+            var department = request.Department?.Trim() ?? string.Empty;
+            if (department.Length == 0 ||
+                department == RoutingPolicy.UnassignedDepartment ||
+                !await departments.ExistsAsync(department))
+            {
+                return Results.BadRequest(new { error = "Please choose your department from the list." });
             }
             //Reject duplicate emails
             var existing = await users.GetByEmailAsync(request.Email);
@@ -39,7 +49,7 @@ public static class AuthEndpoints
                 Email = request.Email,
                 PasswordHash = passwordHash,
                 Role = "Employee",
-                Department = request.Department
+                Department = department
             };
 
             var newId = await users.CreateAsync(user);

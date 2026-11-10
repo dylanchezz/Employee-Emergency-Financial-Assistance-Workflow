@@ -4,7 +4,7 @@ PostgreSQL schema for the Employee Emergency Financial Assistance Workflow.
 
 Database name: emergency_assistance_db
 
-The schema is defined in schema.sql and implements the logical database schema documented in Chapter 4. It contains ten tables: users, welfare_requests, claim_events, priority_predictions, documents, approvals, notifications, escalations, audit_logs, and two_factor_codes (added by migration 009 for Email 2FA, along with users.two_factor_enabled).
+The schema is defined in schema.sql and implements the logical database schema documented in Chapter 4. It contains eleven tables: departments, users, welfare_requests, claim_events, priority_predictions, documents, approvals, notifications, escalations, audit_logs, and two_factor_codes (added by migration 009 for Email 2FA, along with users.two_factor_enabled). departments (migration 011, D1) is the canonical department list; users.department is a required FK to departments(name), with "Unassigned" as the catch-all.
 
 Design notes
 Single users table. All actors (Employee and the approver/admin roles) are stored in users, distinguished by the role column. This matches the class model, where Employee is a specialisation of User implemented via single-table inheritance.
@@ -43,7 +43,7 @@ After loading, confirm the tables exist:
 bash
 psql -U postgres -d emergency_assistance_db -c "\dt"
 
-You should see the ten tables listed.
+You should see the eleven tables listed.
 
 Note on re-running
 

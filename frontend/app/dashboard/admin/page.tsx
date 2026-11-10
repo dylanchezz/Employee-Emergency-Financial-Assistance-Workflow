@@ -21,8 +21,16 @@ type AdminUser = {
   name: string;
   email: string;
   role: string;
-  department: string | null;
+  department: string;
   createdAt: string;
+};
+
+// D1: one row of the canonical departments list.
+type DepartmentRow = {
+  departmentId: number;
+  name: string;
+  createdAt: string;
+  userCount: number;
 };
 
 type ValidationRule = {
@@ -76,7 +84,13 @@ export default function AdminDashboard() {
   const [cEmail, setCEmail] = useState("");
   const [cPassword, setCPassword] = useState("");
   const [cRole, setCRole] = useState("Employee");
-  const [cDepartment, setCDepartment] = useState("");
+  const [cDepartment, setCDepartment] = useState("Unassigned");
+
+  // D1: departments (list + create) and per-row pending department edits.
+  const [departments, setDepartments] = useState<DepartmentRow[]>([]);
+  const [pendingDept, setPendingDept] = useState<Record<number, string>>({});
+  const [newDept, setNewDept] = useState("");
+  const [deptMsg, setDeptMsg] = useState("");
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState("");
 
@@ -93,6 +107,28 @@ export default function AdminDashboard() {
     }
     setUsers(result.data);
   }
+  async function loadDepartments() {
+    const result = await apiFetch<DepartmentRow[]>("/admin/departments");
+    if (result.ok) setDepartments(result.data);
+  }
+
+  async function createDepartment() {
+    setDeptMsg("");
+    const deptName = newDept.trim();
+    if (!deptName) return;
+    const result = await apiFetch<DepartmentRow>("/admin/departments", {
+      method: "POST",
+      body: { name: deptName },
+    });
+    if (!result.ok) {
+      setDeptMsg(result.error);
+      return;
+    }
+    setDeptMsg(`Department "${result.data.name}" created.`);
+    setNewDept("");
+    loadDepartments();
+  }
+
     async function loadRules() {
     const result = await apiFetch<ValidationRule[]>("/admin/rules");
     if (result.ok) setRules(result.data);
@@ -128,6 +164,7 @@ export default function AdminDashboard() {
     setName(localStorage.getItem("name") ?? "");
     setRole(localStorage.getItem("role") ?? "");
     loadUsers();
+    loadDepartments();
     loadRules();
     loadAttention();
     loadAudit();
@@ -141,22 +178,47 @@ export default function AdminDashboard() {
     router.replace("/");
   }
 
+  // Saves whatever changed on the row: role and/or (D1) department.
   async function saveRole(user: AdminUser) {
     const next = pendingRole[user.userId] ?? user.role;
-    if (next === user.role) return; // nothing changed
+    const nextDept = pendingDept[user.userId] ?? user.department;
+    if (next === user.role && nextDept === user.department) return; // nothing changed
     setMessage("");
     setSavingId(user.userId);
-    const result = await apiFetch<{ userId: number; role: string }>(
-      `/admin/users/${user.userId}/role`,
-      { method: "PUT", body: { role: next } }
-    );
-    setSavingId(null);
-    if (!result.ok) {
-      setMessage(result.error);
-      return;
+    const done: string[] = [];
+    if (next !== user.role) {
+      const result = await apiFetch<{ userId: number; role: string }>(
+        `/admin/users/${user.userId}/role`,
+        { method: "PUT", body: { role: next } }
+      );
+      if (!result.ok) {
+        setSavingId(null);
+        setMessage(result.error);
+        return;
+      }
+      done.push(`role → ${next}`);
     }
-    setMessage(`${user.name}'s role updated to ${next}.`);
+    if (nextDept !== user.department) {
+      const result = await apiFetch<{ userId: number; department: string }>(
+        `/admin/users/${user.userId}/department`,
+        { method: "PUT", body: { department: nextDept } }
+      );
+      if (!result.ok) {
+        setSavingId(null);
+        setMessage(result.error);
+        return;
+      }
+      done.push(`department → ${nextDept}`);
+    }
+    setSavingId(null);
+    setMessage(`${user.name}: ${done.join(", ")}.`);
+    setPendingDept((p) => {
+      const rest = { ...p };
+      delete rest[user.userId];
+      return rest;
+    });
     loadUsers();
+    loadDepartments();
   }
 
   async function createUser() {
@@ -173,7 +235,7 @@ export default function AdminDashboard() {
         email: cEmail.trim(),
         password: cPassword,
         role: cRole,
-        department: cDepartment.trim() || null,
+        department: cDepartment,
       },
     });
     setCreating(false);
@@ -186,7 +248,7 @@ export default function AdminDashboard() {
     setCEmail("");
     setCPassword("");
     setCRole("Employee");
-    setCDepartment("");
+    setCDepartment("Unassigned");
     setShowCreate(false);
     loadUsers();
   }
@@ -330,12 +392,20 @@ export default function AdminDashboard() {
                   ))}
                 </select>
               </Field>
-              <Field label="Department (optional)">
-                <input
+              <Field label="Department">
+                {/* D1: from the canonical list. A Department Supervisor's department decides
+                    which tier-1 queue they see. */}
+                <select
                   value={cDepartment}
                   onChange={(e) => setCDepartment(e.target.value)}
                   className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
-                />
+                >
+                  {departments.map((d) => (
+                    <option key={d.departmentId} value={d.name}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
               </Field>
             </div>
             <div className="mt-4 flex items-center gap-3">
@@ -371,12 +441,28 @@ export default function AdminDashboard() {
               <tbody>
                 {users.map((u) => {
                   const selected = pendingRole[u.userId] ?? u.role;
-                  const changed = selected !== u.role;
+                  const selectedDept = pendingDept[u.userId] ?? u.department;
+                  const changed = selected !== u.role || selectedDept !== u.department;
                   return (
                     <tr key={u.userId} className="border-b border-line last:border-0">
                       <td className="px-4 py-3 text-ink">{u.name}</td>
                       <td className="px-4 py-3 text-ink-soft">{u.email}</td>
-                      <td className="px-4 py-3 text-ink-soft">{u.department ?? "—"}</td>
+                      <td className="px-4 py-3">
+                        {/* D1: admin sets any user's department (users can only choose once). */}
+                        <select
+                          value={selectedDept}
+                          onChange={(e) =>
+                            setPendingDept((p) => ({ ...p, [u.userId]: e.target.value }))
+                          }
+                          className="rounded-lg border border-line bg-surface px-2 py-1.5 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                        >
+                          {departments.map((d) => (
+                            <option key={d.departmentId} value={d.name}>
+                              {d.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
                       <td className="px-4 py-3">
                         <select
                           value={selected}
@@ -408,6 +494,51 @@ export default function AdminDashboard() {
             </table>
           </div>
         )}
+
+        {/* D1: departments — minimal management (list + create). */}
+        <h2 className="mt-10 font-[family-name:var(--font-heading)] text-xl font-semibold text-ink">
+          Departments
+        </h2>
+        <p className="mt-1 text-sm text-ink-soft">
+          A Department Supervisor reviews only requests from their own department (tier 1);
+          Welfare, Finance and HR see all departments. &quot;Unassigned&quot; holds accounts that
+          haven&apos;t chosen yet — they must choose before submitting.
+        </p>
+        <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-surface">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-line text-ink-soft">
+              <tr>
+                <th className="px-4 py-3 font-medium">Department</th>
+                <th className="px-4 py-3 font-medium">Users</th>
+              </tr>
+            </thead>
+            <tbody>
+              {departments.map((d) => (
+                <tr key={d.departmentId} className="border-b border-line last:border-0">
+                  <td className="px-4 py-3 text-ink">{d.name}</td>
+                  <td className="px-4 py-3 text-ink-soft">{d.userCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <input
+            value={newDept}
+            onChange={(e) => setNewDept(e.target.value)}
+            placeholder="New department name"
+            maxLength={100}
+            className="rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+          />
+          <button
+            onClick={createDepartment}
+            disabled={!newDept.trim()}
+            className="rounded-lg bg-kq-red px-4 py-2 text-sm font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60"
+          >
+            + Add department
+          </button>
+          {deptMsg && <p className="text-sm text-ink">{deptMsg}</p>}
+        </div>
 
         {/* Validation rules — read-only view of the current thresholds. */}
         {rules.length > 0 && (

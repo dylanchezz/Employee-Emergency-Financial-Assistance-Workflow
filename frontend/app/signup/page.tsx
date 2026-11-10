@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import GoogleSignInButton from "../components/GoogleSignInButton";
@@ -15,6 +15,15 @@ export default function SignupPage() {
   const [department, setDepartment] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // D1: the canonical department list (public endpoint) — department is now required.
+  const [departments, setDepartments] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/departments`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: string[]) => setDepartments(list))
+      .catch(() => setDepartments([]));
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,8 +38,8 @@ export default function SignupPage() {
           name,
           email,
           password,
-          // Send department only if the user typed one; otherwise omit it.
-          department: department.trim() === "" ? null : department,
+          // D1: required, chosen from the canonical list (drives tier-1 routing).
+          department,
         }),
       });
 
@@ -39,7 +48,8 @@ export default function SignupPage() {
         return;
       }
       if (res.status === 400) {
-        setError("Please fill in your name, email, and password.");
+        const body = await res.json().catch(() => null);
+        setError(body?.error ?? "Please fill in your name, email, password, and department.");
         return;
       }
       if (!res.ok) {
@@ -141,16 +151,26 @@ export default function SignupPage() {
 
           <div className="mt-5">
             <label htmlFor="department" className="block text-sm font-medium text-ink">
-              Department <span className="text-ink-soft">(optional)</span>
+              Department
             </label>
-            <input
+            {/* D1: required, from the canonical list — your department decides which
+                Department Supervisor reviews your requests first. */}
+            <select
               id="department"
-              type="text"
+              required
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
               className="mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
-              placeholder="Finance"
-            />
+            >
+              <option value="" disabled>
+                {departments.length ? "Choose your department" : "Loading departments…"}
+              </option>
+              {departments.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
           </div>
 
           {error && (

@@ -7,6 +7,21 @@ DROP TABLE IF EXISTS documents        CASCADE;
 DROP TABLE IF EXISTS priority_predictions CASCADE;
 DROP TABLE IF EXISTS welfare_requests CASCADE;
 DROP TABLE IF EXISTS users            CASCADE;
+DROP TABLE IF EXISTS departments      CASCADE;
+
+
+-- departments
+-- D1 (migration 011): the canonical, admin-managed department list. users.department is a
+-- FK to name (natural key, ON UPDATE CASCADE). "Unassigned" is the catch-all for accounts
+-- that haven't chosen yet (e.g. Google sign-ups); they must choose before submitting.
+
+CREATE TABLE departments (
+    department_id  SERIAL PRIMARY KEY,
+    name           VARCHAR(100) NOT NULL UNIQUE,
+    created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO departments (name) VALUES ('Unassigned');
 
 
 -- users
@@ -29,7 +44,9 @@ CREATE TABLE users (
                        'HR Manager',
                        'System Administrator'
                    )),
-    department     VARCHAR(100),
+    -- D1 (migration 011): required; FK to departments(name). Tier-1 routing reads it.
+    department     VARCHAR(100) NOT NULL DEFAULT 'Unassigned'
+                   REFERENCES departments(name) ON UPDATE CASCADE ON DELETE RESTRICT,
     created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     -- A2 Email 2FA opt-in flag (migration 009). Off by default.
     two_factor_enabled BOOLEAN NOT NULL DEFAULT false,
@@ -228,3 +245,4 @@ CREATE INDEX idx_approvals_request   ON approvals(request_id);
 CREATE INDEX idx_notifications_recipient ON notifications(recipient_id);
 CREATE INDEX idx_audit_request       ON audit_logs(request_id);
 CREATE INDEX idx_two_factor_codes_user_id ON two_factor_codes(user_id);
+CREATE INDEX idx_users_department ON users(department);
