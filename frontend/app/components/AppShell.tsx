@@ -9,6 +9,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import NotificationBell from "./NotificationBell";
+import ThemeToggle from "./ThemeToggle";   // Phase 7 (G2)
 import Avatar from "./Avatar";
 import { apiFetch } from "../lib/api";
 import { signOut, LOGIN_PATH } from "../lib/auth";
@@ -124,7 +125,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <button
           aria-label="Close menu"
           onClick={() => setMenuOpen(false)}
-          className="fixed inset-0 z-20 bg-ink/30 md:hidden"
+          className="fixed inset-0 z-20 bg-black/40 md:hidden"
         />
       )}
 
@@ -144,6 +145,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             <NotificationBell />
             <button
               onClick={handleSignOut}

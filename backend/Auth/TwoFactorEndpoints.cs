@@ -284,7 +284,7 @@ public static class TwoFactorEndpoints
             : "Signing in now needs only your password.";
         var body =
             $"Hello {user.Name},\n\n" +
-            $"Two-step sign-in was {state} for your Welfare Assistance account at " +
+            $"Two-step sign-in was {state} for your Employee Welfare Portal account at " +
             $"{DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC.\n\n" +
             $"{effect}\n\n" +
             "If you did not make this change, change your password immediately and contact your administrator.";

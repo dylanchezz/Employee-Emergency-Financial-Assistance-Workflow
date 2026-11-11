@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { dashboardFor, LOGIN_PATH } from "../lib/auth";
 import { useSession } from "../lib/session";
+import ThemeToggle from "./ThemeToggle";   // Phase 7 (G2)
 
 export default function PublicNav() {
   const { ready, token, role } = useSession();
@@ -50,16 +51,22 @@ export default function PublicNav() {
           </span>
         </Link>
 
-        <div className="hidden items-center gap-2 text-sm md:flex">{links}</div>
+        <div className="hidden items-center gap-2 text-sm md:flex">
+          <ThemeToggle />
+          {links}
+        </div>
 
-        <button
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          aria-label="Menu"
-          className="rounded-lg border border-line px-2.5 py-1.5 text-sm text-ink md:hidden"
-        >
-          ☰
-        </button>
+        <div className="flex items-center gap-2 md:hidden">
+          <ThemeToggle />
+          <button
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            aria-label="Menu"
+            className="rounded-lg border border-line px-2.5 py-1.5 text-sm text-ink"
+          >
+            ☰
+          </button>
+        </div>
       </nav>
       {open && <div className="flex flex-col gap-1 border-t border-line px-4 py-3 text-sm md:hidden">{links}</div>}
     </header>

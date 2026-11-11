@@ -83,22 +83,30 @@ public class EscalationWorker : BackgroundService
             else if (r.CurrentTier >= 4)
             {
                 // VERTICAL at HR: no tier above — alert admins (name the slow officer if any).
-                // The in-app alert repeats every window (deliberately persistent), but admins are
-                // EMAILED only on the first one — otherwise a stuck request emails every admin on
-                // every pass (with the 1-min demo window that would exhaust Brevo's 300/day cap).
+                //
+                // Phase 7 (G5): this now happens ONCE per request. Before, every pass re-wrote the
+                // escalation row, the in-app admin alert, the employee's "reassigned" notification and
+                // the audit row (~450 of each for one stuck request under the 1-minute demo window).
+                // A24 fix 4 had already limited the admin EMAIL to the first alert; G5 applies the same
+                // "first time only" key to everything else.
                 // "First" = this request has never had the HR-alert audit entry written before.
                 // (We can't use the escalations table for this: a horizontal release at tier 4
-                // also records a tier-4 escalation, which would wrongly suppress the first email.)
-                var firstHrAlert = !await audit.HasActionAsync(r.RequestId, HrAlertAuditAction);
+                // also records a tier-4 escalation, which would wrongly suppress the first alert.)
+                // Admins keep seeing it afterwards via the dashboard attention list (Phase 6 F1),
+                // which is driven by that first escalation row — persistent without repeating.
+                if (await audit.HasActionAsync(r.RequestId, HrAlertAuditAction))
+                {
+                    continue;   // already alerted — nothing new to say, so write nothing
+                }
                 await requests.RecordEscalationAsync(r.RequestId, r.CurrentTier);
                 await requests.UpdateStatusAndTierAsync(r.RequestId, "In Review", r.CurrentTier);
                 await notifications.OnAdminAlertAsync(
                     r.RequestId,
                     $"Request #{r.RequestId} has been awaiting HR review beyond the response window.",
                     responsibleOfficerId: r.ClaimedBy,
-                    sendEmail: firstHrAlert);
+                    sendEmail: true);
                 await notifications.OnEscalatedNotifyEmployeeAsync(r.RequestId, r.UserId, wentUpATier: false);
-                _logger.LogInformation("Request {Id} escalated at HR tier → admin alerted.", r.RequestId);
+                _logger.LogInformation("Request {Id} escalated at HR tier → admin alerted (first and only time).", r.RequestId);
                 await audit.LogAsync(r.RequestId, null, HrAlertAuditAction);
             }
             else

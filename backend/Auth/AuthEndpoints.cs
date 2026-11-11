@@ -68,10 +68,12 @@ public static class AuthEndpoints
             IUserRepository users,
             ITokenService tokenService,
             ITwoFactorCodeRepository codes,
-            IEmailService email
+            IEmailService email,
+            LoginThrottle unknownEmails,
+            HttpContext http
         ) =>
         {
-            var user = await users.GetByEmailAsync(request.Email);
+            var user = await users.GetByEmailAsync(request.Email ?? string.Empty);
 
             // A3 (A25): a Google-only account has no password. Say so plainly rather than
             // "incorrect password" — and this guard must come BEFORE BCrypt.Verify, which
@@ -83,13 +85,42 @@ public static class AuthEndpoints
                     statusCode: StatusCodes.Status401Unauthorized);
             }
 
+            // Phase 7 (A1) — unknown email: behave exactly like a real account would (401 for the
+            // first N-1 tries, then the same 429 lock), via the in-memory twin. Otherwise the lock
+            // itself would reveal which emails are registered.
+            if (user is null)
+            {
+                if (unknownEmails.ActiveLock(request.Email ?? string.Empty) is { } fakeLock)
+                {
+                    return AuthPolicy.Locked(http, fakeLock);
+                }
+                var nowFakeLocked = unknownEmails.RecordFailure(request.Email ?? string.Empty);
+                return nowFakeLocked is { } fl ? AuthPolicy.Locked(http, fl) : Results.Unauthorized();
+            }
+
+            // A1: a locked account is refused BEFORE the password is even checked — so the right
+            // password doesn't help during the lock, and neither does 2FA (that step is never reached).
+            if (user.LockedUntil is { } lockedUntil && lockedUntil > DateTime.UtcNow)
+            {
+                return AuthPolicy.Locked(http,
+                    new DateTimeOffset(DateTime.SpecifyKind(lockedUntil, DateTimeKind.Utc), TimeSpan.Zero));
+            }
+
             //Same response whether the email is unknown or the password is wrong.
             //An attacker cannot tell which emails are registered
-            if (user is null ||
-                !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+            if (!BCrypt.Net.BCrypt.Verify(request.Password ?? string.Empty, user.PasswordHash))
             {
-                return Results.Unauthorized();
+                // A1: count it (atomically, in the DB). The Nth wrong password locks the account and
+                // is answered with the lock straight away — the same as the unknown-email path above.
+                var nowLocked = await users.RecordFailedLoginAsync(
+                    user.UserId, AuthPolicy.MaxFailedLogins, AuthPolicy.LockoutDuration);
+                return nowLocked is { } nl
+                    ? AuthPolicy.Locked(http, new DateTimeOffset(DateTime.SpecifyKind(nl, DateTimeKind.Utc), TimeSpan.Zero))
+                    : Results.Unauthorized();
             }
+
+            // A1: the right password (and not locked) — wipe the failure count.
+            await users.ClearFailedLoginsAsync(user.UserId);
 
             // C2: a deactivated (soft-deleted) account can't sign in. Checked AFTER the password,
             // so only someone who knows the password learns the account is deactivated (anyone

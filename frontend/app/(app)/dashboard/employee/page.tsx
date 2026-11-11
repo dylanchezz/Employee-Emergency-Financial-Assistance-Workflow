@@ -97,7 +97,7 @@ export default function EmployeeDashboard() {
                 <span className="font-medium text-ink">#{r.requestId}</span>
                 <span className="text-ink">{r.category}</span>
                 {r.priorityLevel && (
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[r.priorityLevel] ?? "bg-ink-soft text-white"}`}>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${PRIORITY_STYLES[r.priorityLevel] ?? "bg-line text-ink-soft"}`}>
                     {r.priorityLevel}
                   </span>
                 )}

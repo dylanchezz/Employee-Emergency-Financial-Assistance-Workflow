@@ -23,6 +23,10 @@ function LoginForm() {
     if (searchParams.get("signup") === "success") {
       setNotice("Account created. Please sign in.");
     }
+    // Phase 7 (A4): back from a successful password reset.
+    if (searchParams.get("reset") === "success") {
+      setNotice("Your password has been reset. Please sign in with your new password.");
+    }
   }, [searchParams]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -52,6 +56,17 @@ function LoginForm() {
         // otherwise the deliberately vague one.
         const body = await res.json().catch(() => null);
         setError(body?.error ?? "Incorrect email or password.");
+        return;
+      }
+      if (res.status === 429) {
+        // Phase 7 (A1): too many wrong passwords. Show the end of the lock in the viewer's own clock.
+        const body = await res.json().catch(() => null);
+        const until = body?.lockedUntil ? new Date(body.lockedUntil) : null;
+        setError(
+          until && !isNaN(until.getTime())
+            ? `Too many failed sign-in attempts. Please try again at ${until.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`
+            : body?.error ?? "Too many failed sign-in attempts. Please try again later."
+        );
         return;
       }
       if (!res.ok) {
@@ -146,9 +161,15 @@ function LoginForm() {
           </div>
 
           <div className="mt-5">
-            <label htmlFor="password" className="block text-sm font-medium text-ink">
-              Password
-            </label>
+            <div className="flex items-baseline justify-between">
+              <label htmlFor="password" className="block text-sm font-medium text-ink">
+                Password
+              </label>
+              {/* Phase 7 (A4) */}
+              <Link href="/forgot-password" className="text-sm text-kq-red hover:underline">
+                Forgot password?
+              </Link>
+            </div>
             <input
               id="password"
               type="password"
@@ -174,7 +195,7 @@ function LoginForm() {
             {loading ? "Signing in…" : "Sign in"}
           </button>
           <GoogleSignInButton />
-                    <p className="mt-6 text-sm text-ink-soft">
+          <p className="mt-6 text-sm text-ink-soft">
             Don&apos;t have an account?{" "}
             <Link href="/signup" className="font-medium text-kq-red hover:underline">
               Create one

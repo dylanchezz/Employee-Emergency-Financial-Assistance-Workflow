@@ -110,7 +110,7 @@ export default function LandingPage() {
         </section>
 
         {/* About — the nav's "About" link scrolls here (build decision 2: an in-page anchor). */}
-        <section id="about" className="scroll-mt-20 bg-ink text-white">
+        <section id="about" className="scroll-mt-20 bg-night text-white">
           <div className="mx-auto max-w-3xl px-4 py-16 text-center md:px-8">
             <h2 className="font-[family-name:var(--font-heading)] text-3xl font-bold">About</h2>
             <p className="mt-5 text-lg leading-relaxed text-white/80">

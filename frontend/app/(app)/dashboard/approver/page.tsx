@@ -181,7 +181,7 @@ export default function ApproverDashboard() {
                         <span
                           className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                             item.priorityLevel
-                              ? PRIORITY_STYLES[item.priorityLevel] ?? "bg-ink-soft text-white"
+                              ? PRIORITY_STYLES[item.priorityLevel] ?? "bg-line text-ink-soft"
                               : "bg-line text-ink-soft"
                           }`}
                         >
@@ -264,7 +264,7 @@ export default function ApproverDashboard() {
                     {item.priorityLevel && (
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                          PRIORITY_STYLES[item.priorityLevel] ?? "bg-ink-soft text-white"
+                          PRIORITY_STYLES[item.priorityLevel] ?? "bg-line text-ink-soft"
                         }`}
                       >
                         {item.priorityLevel}

@@ -40,6 +40,12 @@ public interface IUserRepository
     // Phase 3 (A6): replace a PASSWORD account's hash. False if no such user, or the account has
     // no password (Google-only — never give an OAuth account a password through this path).
     Task<bool> SetPasswordHashAsync(int userId, string newHash);
+
+    // ---- Phase 7 / A1 login throttling (migration 015) ----
+    // Count one wrong password, atomically. Returns the lock end if the account is now locked, else null.
+    Task<DateTime?> RecordFailedLoginAsync(int userId, int maxFailures, TimeSpan lockout);
+    // A correct password (or a password reset) wipes the counter and any lock.
+    Task ClearFailedLoginsAsync(int userId);
 }
 
 public class UserRepository : IUserRepository
@@ -63,7 +69,9 @@ public class UserRepository : IUserRepository
                    oauth_provider   AS OAuthProvider,
                    oauth_subject    AS OAuthSubject,
                    is_active        AS IsActive,
-                   deactivated_at   AS DeactivatedAt
+                   deactivated_at   AS DeactivatedAt,
+                   failed_login_count AS FailedLoginCount,
+                   locked_until     AS LockedUntil
             FROM users
             WHERE email = @Email;";
         using var connection = _factory.CreateConnection();
@@ -86,7 +94,9 @@ public class UserRepository : IUserRepository
                    oauth_provider   AS OAuthProvider,
                    oauth_subject    AS OAuthSubject,
                    is_active        AS IsActive,
-                   deactivated_at   AS DeactivatedAt
+                   deactivated_at   AS DeactivatedAt,
+                   failed_login_count AS FailedLoginCount,
+                   locked_until     AS LockedUntil
             FROM users
             WHERE user_id = @UserId;";
         using var connection = _factory.CreateConnection();
@@ -108,7 +118,9 @@ public class UserRepository : IUserRepository
                    oauth_provider   AS OAuthProvider,
                    oauth_subject    AS OAuthSubject,
                    is_active        AS IsActive,
-                   deactivated_at   AS DeactivatedAt
+                   deactivated_at   AS DeactivatedAt,
+                   failed_login_count AS FailedLoginCount,
+                   locked_until     AS LockedUntil
             FROM users
             WHERE oauth_provider = @Provider AND oauth_subject = @Subject;";
         using var connection = _factory.CreateConnection();
@@ -287,5 +299,45 @@ public class UserRepository : IUserRepository
             WHERE user_id = @UserId AND password_hash IS NOT NULL AND is_active;";
         using var connection = _factory.CreateConnection();
         return await connection.ExecuteAsync(sql, new { UserId = userId, Hash = newHash }) > 0;
+    }
+
+    public async Task<DateTime?> RecordFailedLoginAsync(int userId, int maxFailures, TimeSpan lockout)
+    {
+        // One conditional write, row-locked (FOR UPDATE), so parallel wrong guesses each count once.
+        //   - a lock that has already EXPIRED starts the count again from 0 (a fresh N tries);
+        //   - the Nth failure sets locked_until = now() + lockout (the database's clock, one clock);
+        //   - while still locked, a straggling failure keeps the existing lock (it does not extend it).
+        const string sql = @"
+            WITH cur AS (
+                SELECT user_id,
+                       locked_until,
+                       (CASE WHEN locked_until IS NOT NULL AND locked_until <= now()
+                             THEN 0 ELSE failed_login_count END) + 1 AS n
+                FROM users
+                WHERE user_id = @UserId
+                FOR UPDATE
+            )
+            UPDATE users u
+            SET failed_login_count = cur.n,
+                locked_until = CASE
+                    WHEN cur.locked_until > now() THEN cur.locked_until
+                    WHEN cur.n >= @Max THEN now() + (@Seconds * interval '1 second')
+                    ELSE NULL END
+            FROM cur
+            WHERE u.user_id = cur.user_id
+            RETURNING u.locked_until;";
+        using var connection = _factory.CreateConnection();
+        return await connection.QuerySingleOrDefaultAsync<DateTime?>(sql,
+            new { UserId = userId, Max = maxFailures, Seconds = (int)lockout.TotalSeconds });
+    }
+
+    public async Task ClearFailedLoginsAsync(int userId)
+    {
+        // The WHERE skips the write entirely for the normal case (nothing to clear).
+        const string sql = @"
+            UPDATE users SET failed_login_count = 0, locked_until = NULL
+            WHERE user_id = @UserId AND (failed_login_count <> 0 OR locked_until IS NOT NULL);";
+        using var connection = _factory.CreateConnection();
+        await connection.ExecuteAsync(sql, new { UserId = userId });
     }
 }

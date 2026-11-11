@@ -55,6 +55,8 @@ builder.Services.AddScoped<IDepartmentRepository, DepartmentRepository>();   // 
 builder.Services.AddScoped<IDisbursementRepository, DisbursementRepository>();   // D2
 builder.Services.AddScoped<IAccountDeletionRepository, AccountDeletionRepository>();   // C2
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();   // Phase 6
+builder.Services.AddScoped<IPasswordResetRepository, PasswordResetRepository>();   // Phase 7 (A4)
+builder.Services.AddSingleton<LoginThrottle>();   // Phase 7 (A1): unknown-email twin of the DB lock
 
 // A3 Google sign-in: settings (secret from gitignored config only) + a typed HttpClient for
 // the server-to-server code exchange with Google.
@@ -152,7 +154,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UsePresenceTracking();   // Phase 6 (F3): throttled users.last_seen_at
 
-app.MapGet("/", () => "Welfare Assistance API is running");
+app.MapGet("/", () => "Employee Welfare Portal API is running");
 
 //Check that API can reach the database
 app.MapGet("/api/health/db", async (IDbConnectionFactory factory) =>
@@ -179,6 +181,7 @@ app.MapDepartmentEndpoints();   // D1
 app.MapAccountDeletionEndpoints();   // C2
 app.MapProfileEndpoints();   // Phase 3 (C1/A6)
 app.MapAdminAnalyticsEndpoints();   // Phase 6
+app.MapPasswordResetEndpoints();   // Phase 7 (A4)
 app.MapProtectedTestEndpoints();
 app.MapRequestEndpoints();
 app.MapNotificationEndpoints();

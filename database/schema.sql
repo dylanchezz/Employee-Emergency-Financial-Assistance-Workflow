@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS password_reset_tokens CASCADE;
 DROP TABLE IF EXISTS account_deletion_requests CASCADE;
 DROP TABLE IF EXISTS disbursements    CASCADE;
 DROP TABLE IF EXISTS two_factor_codes CASCADE;
@@ -61,6 +62,9 @@ CREATE TABLE users (
     -- Phase 6 / F3 (migration 014): last authenticated API call, throttled to ~1/min. "Active now"
     -- = seen in the last 5 minutes (not live presence). NULL = not seen since 014.
     last_seen_at   TIMESTAMPTZ,
+    -- Phase 7 / A1 (migration 015): consecutive wrong passwords + a temporary lock (HTTP 429).
+    failed_login_count INTEGER NOT NULL DEFAULT 0,
+    locked_until   TIMESTAMPTZ,
     CONSTRAINT users_oauth_pair_chk
         CHECK ((oauth_provider IS NULL) = (oauth_subject IS NULL)),
     CONSTRAINT users_has_login_method_chk
@@ -271,6 +275,23 @@ CREATE TABLE account_deletion_requests (
 CREATE UNIQUE INDEX uq_account_deletion_one_pending
     ON account_deletion_requests (user_id)
     WHERE status = 'Pending';
+
+
+-- password_reset_tokens
+-- Phase 7 / A4 (migration 016): single-use "forgot password" links. Only the SHA-256 hash of the
+-- 256-bit token is stored (a credential). used_at set on consumption; expires_at bounds the link.
+
+CREATE TABLE password_reset_tokens (
+    token_id    SERIAL PRIMARY KEY,
+    user_id     INTEGER NOT NULL
+                REFERENCES users(user_id) ON DELETE CASCADE,
+    token_hash  CHAR(64) NOT NULL UNIQUE,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    used_at     TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_password_reset_tokens_user_id ON password_reset_tokens (user_id);
 
 
 -- two_factor_codes

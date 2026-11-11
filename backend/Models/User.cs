@@ -21,5 +21,8 @@ public class User
     // C2 soft-delete (migration 013): false = deactivated — can't sign in by any path; history kept.
     public bool IsActive {get; set; } = true;
     public DateTime? DeactivatedAt {get; set; }
+    // Phase 7 / A1 (migration 015): consecutive wrong passwords + a temporary lock (UTC).
+    public int FailedLoginCount {get; set; }
+    public DateTime? LockedUntil {get; set; }
 
 }

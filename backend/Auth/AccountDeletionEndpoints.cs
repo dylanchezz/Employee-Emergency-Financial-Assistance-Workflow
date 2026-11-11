@@ -168,9 +168,9 @@ public static class AccountDeletionEndpoints
             {
                 sent = await email.SendAsync(
                     request.Email,
-                    "Your Welfare Assistance account has been deactivated",
+                    "Your Employee Welfare Portal account has been deactivated",
                     $"Hello {request.Name},\n\n" +
-                    "Your request to delete your Welfare Assistance account has been approved, and the account " +
+                    "Your request to delete your Employee Welfare Portal account has been approved, and the account " +
                     "has been deactivated. You can no longer sign in.\n\n" +
                     "For audit and legal record-keeping, the history of any assistance requests and decisions " +
                     "linked to your account is retained; it is no longer accessible through your account.\n\n" +
@@ -210,8 +210,8 @@ public static class AccountDeletionEndpoints
             // Best-effort heads-up to the owner (a security-relevant change to their account).
             var sent = !string.IsNullOrWhiteSpace(user.Email) && await email.SendAsync(
                 user.Email,
-                "Your Welfare Assistance account has been reactivated",
-                $"Hello {user.Name},\n\nAn administrator has reactivated your Welfare Assistance account. " +
+                "Your Employee Welfare Portal account has been reactivated",
+                $"Hello {user.Name},\n\nAn administrator has reactivated your Employee Welfare Portal account. " +
                 "You can sign in again as before.\n\nIf you did not expect this, contact your administrator.");
             logger.LogInformation("Reactivation email to user {UserId}: {Result}.", userId, sent ? "sent" : "NOT sent");
 
@@ -245,7 +245,7 @@ public static class AccountDeletionEndpoints
                 sent = await email.SendAsync(
                     request.Email,
                     "Your account deletion request was declined",
-                    $"Hello {request.Name},\n\nAn administrator declined your request to delete your Welfare Assistance " +
+                    $"Hello {request.Name},\n\nAn administrator declined your request to delete your Employee Welfare Portal " +
                     "account, so your account remains active." + (reason is null ? "" : $"\n\nReason: {reason}") +
                     "\n\nYou can see this on your Profile page, and request again there if needed.");
             }

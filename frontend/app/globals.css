@@ -17,6 +17,45 @@
   --medium: #e08a1e;
   --low: #2e8b57;
 
+  /*Always-dark band (landing About) - stays dark in both themes*/
+  --night: #1a1d21;
+
+  color-scheme: light;
+}
+
+/*Phase 7 (G2) - dark theme: the SAME token names, darker values, so every
+  bg-surface / text-ink / border-line utility follows automatically.
+  Chosen explicitly via <html data-theme="dark">, or by the OS setting when the
+  viewer hasn't chosen (no data-theme, or anything other than "light").*/
+:root[data-theme="dark"] {
+  --kq-red: #e23a52;
+  --kq-red-deep: #b8203a;
+  --ink: #e9e7e4;
+  --ink-soft: #a3a8ae;
+  --surface: #1c1f23;
+  --canvas: #131518;
+  --line: #30343a;
+  --high: #e23a52;
+  --medium: #eb9a3a;
+  --low: #45b377;
+  --night: #0c0d0f;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --kq-red: #e23a52;
+    --kq-red-deep: #b8203a;
+    --ink: #e9e7e4;
+    --ink-soft: #a3a8ae;
+    --surface: #1c1f23;
+    --canvas: #131518;
+    --line: #30343a;
+    --high: #e23a52;
+    --medium: #eb9a3a;
+    --low: #45b377;
+    --night: #0c0d0f;
+    color-scheme: dark;
+  }
 }
 
 /*Expose tokens to Tailwind utility classes*/
@@ -25,12 +64,13 @@
   --color-kq-red-deep: var(--kq-red-deep);
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
-    --color-surface: var(--surface);
+  --color-surface: var(--surface);
   --color-canvas: var(--canvas);
   --color-line: var(--line);
   --color-high: var(--high);
   --color-medium: var(--medium);
   --color-low: var(--low);
+  --color-night: var(--night);
 
   --font-sans: var(--font-body);
   --font-heading: var(--font-heading);
