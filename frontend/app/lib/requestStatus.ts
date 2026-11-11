@@ -17,7 +17,13 @@ export const PRIORITY_STYLES: Record<string, string> = {
   High: "bg-high text-white",
   Medium: "bg-medium text-white",
   Low: "bg-low text-white",
+  Unclassified: "bg-line text-ink-soft",
 };
+
+// Phase 5 (E4): a request saved while the model service was down has NO priority (graceful
+// degradation, A9) — the UI calls that "Unclassified" rather than hiding it.
+export const PRIORITY_FILTERS = ["High", "Medium", "Low", "Unclassified"] as const;
+export const priorityOf = (p: string | null) => p ?? "Unclassified";
 
 export const STATUS_STYLES: Record<string, string> = {
   "In Review": "bg-medium/15 text-medium",

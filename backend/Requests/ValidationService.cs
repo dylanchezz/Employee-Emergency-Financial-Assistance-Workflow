@@ -6,6 +6,11 @@ namespace backend.Requests;
 public interface IValidationService
 {
     Task<ValidationResult> ValidateAsync(WelfareRequest request, int? excludeRequestId = null);
+
+    // Phase 5 (E1): how many of the user's requests count toward the annual limit right now —
+    // THE count rule 3 uses. The "request stats" endpoint calls this same method, so the
+    // allowance an employee is shown can never drift from the rule that would reject them.
+    Task<int> CountTowardAnnualLimitAsync(int userId, int? excludeRequestId = null);
 }
 
 public class ValidationService : IValidationService
@@ -25,14 +30,21 @@ public class ValidationService : IValidationService
         _requests = requests;
     }
 
+    // Phase 5 (E1): the start of the rolling 12-month window rule 3 looks back over — one definition,
+    // shared by validation and the request-stats endpoint.
+    public static DateTime AnnualWindowStart() => DateTime.UtcNow.AddYears(-1);
+
+    public Task<int> CountTowardAnnualLimitAsync(int userId, int? excludeRequestId = null) =>
+        _requests.CountNonRejectedByUserSinceAsync(userId, AnnualWindowStart(), excludeRequestId);
+
     public async Task<ValidationResult> ValidateAsync(WelfareRequest request, int? excludeRequestId = null)
     {
         // Hard blocks first (stop the flow, skip the model).
 
         // Rule 3: annual limit — at most 3 non-rejected requests per 12 months.
-        var oneYearAgo = DateTime.UtcNow.AddYears(-1);
-        var yearCount = await _requests.CountNonRejectedByUserSinceAsync(
-            request.UserId, oneYearAgo, excludeRequestId);
+        // (Phase 5: the count now goes through CountTowardAnnualLimitAsync — same query, same window —
+        // so the employee-facing allowance in E1 is computed by exactly this code.)
+        var yearCount = await CountTowardAnnualLimitAsync(request.UserId, excludeRequestId);
         if (yearCount >= MaxRequestsPerYear)
         {
             return new ValidationResult(

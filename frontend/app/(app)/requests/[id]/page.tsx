@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { apiFetch } from "@/app/lib/api";
 import { statusLabel } from "@/app/lib/requestStatus";
+import RequestTimeline from "@/app/components/RequestTimeline";
 import { LOGIN_PATH } from "@/app/lib/auth";
 
 // The same categories the new-request form offers, so a resubmit can change category too.
@@ -61,6 +62,8 @@ type RequestDetail = {
     disbursedByName: string;
     disbursedAt: string;
   } | null;
+  // Phase 5 (E3): the previous approver's note for whoever reviews next (staff viewers only).
+  forwardNote: { fromRole: string; approverName: string; note: string; decidedAt: string } | null;
 };
 
 
@@ -530,6 +533,20 @@ export default function RequestDetailPage() {
               )}
             </div>
 
+            {/* Phase 5 (E3): the previous approver's note for this reviewer — distinct from the model's
+                explanation and the validation note. The backend only sends it to staff. */}
+            {detail.forwardNote && (
+              <div className="mt-6 rounded-2xl border border-ink/15 border-l-4 border-l-ink bg-surface p-5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-ink-soft">
+                  Note from the {detail.forwardNote.fromRole}
+                </p>
+                <p className="mt-1.5 whitespace-pre-wrap text-ink">{detail.forwardNote.note}</p>
+                <p className="mt-1.5 text-xs text-ink-soft">
+                  {detail.forwardNote.approverName} · {new Date(detail.forwardNote.decidedAt).toLocaleString()}
+                </p>
+              </div>
+            )}
+
             {/* SHAP explanation — plain-language summary first, then the detail bars. */}
             <h2 className="mt-8 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
               Why this priority?
@@ -596,23 +613,11 @@ export default function RequestDetailPage() {
               </p>
             )}
 
-            {/* Approval history */}
-            {detail.approvals.length > 0 && (
-              <>
-                <h2 className="mt-8 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
-                  Approval history
-                </h2>
-                <div className="mt-4 space-y-2">
-                  {detail.approvals.map((a, i) => (
-                    <div key={i} className="rounded-lg border border-line bg-surface p-3 text-sm">
-                      <span className="font-medium text-ink">Tier {a.tier}</span> ·{" "}
-                      {a.approverName} — {a.decision}
-                      {a.reason && <span className="text-ink-soft"> ({a.reason})</span>}
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
+            {/* Phase 5 (E2): the full dated trail — replaces the old undated "Approval history" list. */}
+            <h2 className="mt-8 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
+              Timeline
+            </h2>
+            <RequestTimeline request={detail} viewerIsOwner={isOwner} />
 
             {/* Edit & resubmit — owner only, while the request is Returned. */}
             {canResubmit && (
@@ -790,14 +795,17 @@ export default function RequestDetailPage() {
                       Your decision
                     </h2>
                     <label className="mt-3 block text-sm text-ink-soft">
-                      Comment / reason (required to reject, return, or defer)
+                      Comment — <span className="font-medium text-ink">required</span> to reject, return or defer
+                      (the employee sees it). On <span className="font-medium text-ink">Approve</span> it&apos;s an
+                      optional note for the next approver (the employee doesn&apos;t see it).
                     </label>
                     <textarea
                       rows={2}
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
                       className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
-                      placeholder="Add a comment…"
+                      maxLength={1000}
+                      placeholder="Reason, or a note for the next approver (optional on Approve)…"
                     />
                     <div className="mt-4 flex flex-wrap gap-3">
                       <button

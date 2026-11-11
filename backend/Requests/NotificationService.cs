@@ -138,11 +138,14 @@ public class NotificationService : INotificationService
         // 2. If the request advanced (still In Review at a new tier), notify that tier's approvers.
         if (decision == "Approve" && newStatus == "In Review")
         {
+            // Phase 5 (E3): if the approver left a forward note, say so (the note itself is shown
+            // on the request page to staff only — never in the employee's messages).
+            var noteHint = string.IsNullOrWhiteSpace(reason) ? "" : $" The {actingRole} left a note for you.";
             foreach (var approverId in await ApproverAudienceAsync(requestId, nextTier))
             {
                 await _notifications.CreateAsync(
                     requestId, approverId,
-                    $"Request #{requestId} is awaiting your review.");
+                    $"Request #{requestId} is awaiting your review.{noteHint}");
             }
         }
 

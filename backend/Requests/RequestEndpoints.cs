@@ -553,6 +553,41 @@ public static class RequestEndpoints
                     };
                 }
             }
+
+            // Phase 5 (E3): approvals.reason holds TWO kinds of text, told apart by the decision:
+            //  - on Rejected / Returned rows it is the REASON, written for the employee → always shown;
+            //  - on Approved rows it is an optional FORWARD NOTE, written for the next approver →
+            //    internal: stripped for the request's owner (also when the owner is an approver, A7).
+            var viewerIdClaim = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                ?? principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            int.TryParse(viewerIdClaim, out var viewerId);
+            var viewerIsOwner = request.UserId == viewerId;
+            if (viewerIsOwner)
+            {
+                foreach (var a in detail.Approvals.Where(a => a.Decision == "Approved"))
+                {
+                    a.Reason = null;
+                }
+            }
+            else
+            {
+                // The note meant for whoever has the request NOW: the latest decision, if it was an
+                // approve-with-note from an earlier tier and the request is still in review.
+                var latest = detail.Approvals.LastOrDefault();
+                if (latest is { Decision: "Approved" } &&
+                    !string.IsNullOrWhiteSpace(latest.Reason) &&
+                    latest.Tier < request.CurrentTier &&
+                    (request.Status == "In Review" || request.Status == "Deferred"))
+                {
+                    detail.ForwardNote = new ForwardNoteInfo
+                    {
+                        FromRole = RoutingPolicy.RoleForTier(latest.Tier) ?? $"tier {latest.Tier}",
+                        ApproverName = latest.ApproverName,
+                        Note = latest.Reason!,
+                        DecidedAt = latest.DecidedAt,
+                    };
+                }
+            }
             return Results.Ok(detail);
         })
         .RequireAuthorization();
@@ -811,6 +846,14 @@ public static class RequestEndpoints
             {
                 return Results.BadRequest(new { error = "A reason is required to reject, return, or defer a request." });
             }
+            // Phase 5 (E3): on Approve the text is an OPTIONAL note for the next approver (stored in
+            // approvals.reason — build decision 2, no migration). Empty stays empty (stored as NULL),
+            // exactly as an approve without a note always behaved; just cap the length.
+            if (dto.Reason is { Length: > 1000 })
+            {
+                return Results.BadRequest(new { error = "Comments can be at most 1000 characters." });
+            }
+            var note = string.IsNullOrWhiteSpace(dto.Reason) ? null : dto.Reason.Trim();
 
 
             // Defer isn't an approvals-table decision (that CHECK allows only
@@ -830,7 +873,7 @@ public static class RequestEndpoints
                     ApproverId = approverId,
                     Tier = approverTier.Value,
                     Decision = recordedDecision,
-                    Reason = dto.Reason,
+                    Reason = note,   // reason (reject/return) or optional forward note (approve)
                 });
             }
 

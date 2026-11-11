@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/app/lib/api";
+import RequestStatsCard from "@/app/components/RequestStatsCard";
 import {
   isAccepted,
   isInProgress,
@@ -52,6 +53,11 @@ export default function EmployeeDashboard() {
         >
           + New request
         </Link>
+      </div>
+
+      {/* Phase 5 (E1): how many requests they have left — before they start a new one. */}
+      <div className="mt-6">
+        <RequestStatsCard />
       </div>
 
       {/* At-a-glance counts, each linking to the matching view. */}
