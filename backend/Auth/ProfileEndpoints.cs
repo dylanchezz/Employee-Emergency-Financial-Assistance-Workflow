@@ -38,6 +38,44 @@ public static class ProfileEndpoints
             });
         });
 
+        // Phase 5 (E1): the caller's request frequency + remaining annual allowance.
+        // Build decision 1: computed by the SAME code rule 3 enforces — ValidationService's constant
+        // (MaxRequestsPerYear), its window (AnnualWindowStart) and its count
+        // (CountTowardAnnualLimitAsync) — never a hard-coded number or a re-implemented count.
+        me.MapGet("/request-stats", async (
+            ClaimsPrincipal principal,
+            IWelfareRequestRepository requests,
+            IValidationService validation) =>
+        {
+            var userId = CallerId(principal);
+            var windowStart = ValidationService.AnnualWindowStart();
+
+            var allTime = await requests.CountByUserAsync(userId);
+            var last12Months = await requests.CountByUserSinceAsync(userId, windowStart);
+            var counted = await validation.CountTowardAnnualLimitAsync(userId);   // non-rejected, as the rule counts
+            var limit = ValidationService.MaxRequestsPerYear;
+            var remaining = Math.Max(0, limit - counted);
+
+            // When the allowance is used up, say when the next request becomes possible: the oldest
+            // counted request drops out of the rolling window one year after it was made.
+            DateTime? nextSlotOpensAt = null;
+            if (remaining == 0)
+            {
+                var oldest = await requests.GetOldestNonRejectedSinceAsync(userId, windowStart);
+                nextSlotOpensAt = oldest?.AddYears(1);
+            }
+
+            return Results.Ok(new
+            {
+                allTime,
+                last12Months,
+                countedTowardLimit = counted,   // rejected requests don't use up the allowance
+                annualLimit = limit,
+                remainingAllowance = remaining,
+                nextSlotOpensAt,
+            });
+        });
+
         me.MapPost("/change-password", async (
             ChangePasswordRequest request,
             ClaimsPrincipal principal,

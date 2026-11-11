@@ -23,4 +23,14 @@ public static class RoutingPolicy
     // one supervisor. (Peer-supervisor review is a possible future variant.)
     public static int InitialTierFor(string submitterRole) =>
         submitterRole == "Department Supervisor" ? 2 : 1;
+
+    // Phase 5 (E3): the role that staffs a tier — for "Note from the {role}" on the detail page.
+    public static string? RoleForTier(int tier) => tier switch
+    {
+        1 => "Department Supervisor",
+        2 => "Welfare Officer",
+        3 => "Finance Officer",
+        4 => "HR Manager",
+        _ => null,
+    };
 }

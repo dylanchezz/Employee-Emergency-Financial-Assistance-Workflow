@@ -36,6 +36,20 @@ public class RequestDetailDto
 
     // D2: the Finance payout, once the request is Disbursed (null before that).
     public DisbursementInfo? Disbursement { get; set; }
+
+    // Phase 5 (E3): the optional note the previous approver left for whoever reviews next.
+    // Only sent to staff viewers (never the request's owner), and only while the request is
+    // still with a later tier — null otherwise.
+    public ForwardNoteInfo? ForwardNote { get; set; }
+}
+
+// Phase 5 (E3): an approve-and-advance note, stored in approvals.reason (no migration).
+public class ForwardNoteInfo
+{
+    public string FromRole { get; set; } = string.Empty;
+    public string ApproverName { get; set; } = string.Empty;
+    public string Note { get; set; } = string.Empty;
+    public DateTime DecidedAt { get; set; }
 }
 
 // D2: what the detail page shows about a payout. Note is the internal Finance memo —

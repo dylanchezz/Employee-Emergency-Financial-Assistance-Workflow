@@ -12,6 +12,7 @@ public interface IWelfareRequestRepository
     Task<int> CountByUserSinceAsync(int userId, DateTime since);
     Task<bool> HasRecentSimilarAsync(int userId, string category, DateTime since, int? excludeRequestId = null);
     Task<int> CountNonRejectedByUserSinceAsync(int userId, DateTime since, int? excludeRequestId = null);
+    Task<DateTime?> GetOldestNonRejectedSinceAsync(int userId, DateTime since);   // Phase 5 (E1)
     Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier, int approverId);
     Task UpdateStatusAndTierAsync(int requestId, string status, int currentTier);
     Task<IEnumerable<QueueItemDto>> GetByUserAsync(int userId);
@@ -130,6 +131,19 @@ public class WelfareRequestRepository : IWelfareRequestRepository
         using var connection = _factory.CreateConnection();
         return await connection.ExecuteScalarAsync<int>(
             sql, new { UserId = userId, Since = since, ExcludeRequestId = excludeRequestId });
+    }
+
+    // Phase 5 (E1): the oldest request that still counts toward the annual limit — same filter as
+    // CountNonRejectedByUserSinceAsync — so the UI can say when the next slot opens (+1 year).
+    public async Task<DateTime?> GetOldestNonRejectedSinceAsync(int userId, DateTime since)
+    {
+        const string sql = @"
+            SELECT MIN(created_at) FROM welfare_requests
+            WHERE user_id = @UserId
+              AND status <> 'Rejected'
+              AND created_at >= @Since;";
+        using var connection = _factory.CreateConnection();
+        return await connection.ExecuteScalarAsync<DateTime?>(sql, new { UserId = userId, Since = since });
     }
 
     public async Task<IEnumerable<QueueItemDto>> GetQueueForTierAsync(int tier, int approverId)
