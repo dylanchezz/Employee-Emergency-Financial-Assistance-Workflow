@@ -152,7 +152,7 @@ export default function VerifyTwoFactorPage() {
             autoFocus
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            className="mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-center text-2xl tracking-[0.5em] text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+            className="mt-1.5 w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-center text-2xl tracking-[0.5em] text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
             placeholder="000000"
           />
         </div>
@@ -163,7 +163,7 @@ export default function VerifyTwoFactorPage() {
           </p>
         )}
         {info && (
-          <p className="mt-4 text-sm text-low" role="status">
+          <p className="mt-4 text-sm text-low-text" role="status">
             {info}
           </p>
         )}

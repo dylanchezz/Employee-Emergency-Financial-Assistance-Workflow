@@ -32,7 +32,7 @@ export default function AuthCard({
 }
 
 export const authInputClass =
-  "mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20";
+  "mt-1.5 w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20";
 
 export const authButtonClass =
   "mt-6 w-full rounded-lg bg-kq-red py-2.5 font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60";

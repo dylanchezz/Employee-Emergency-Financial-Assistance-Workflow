@@ -10,6 +10,7 @@ import { useState } from "react";
 import { dashboardFor, LOGIN_PATH } from "../lib/auth";
 import { useSession } from "../lib/session";
 import ThemeToggle from "./ThemeToggle";   // Phase 7 (G2)
+import { MenuIcon } from "./icons";   // Phase 8
 
 export default function PublicNav() {
   const { ready, token, role } = useSession();
@@ -62,9 +63,9 @@ export default function PublicNav() {
             onClick={() => setOpen((o) => !o)}
             aria-expanded={open}
             aria-label="Menu"
-            className="rounded-lg border border-line px-2.5 py-1.5 text-sm text-ink"
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-line text-ink transition hover:bg-canvas"
           >
-            ☰
+            <MenuIcon />
           </button>
         </div>
       </nav>

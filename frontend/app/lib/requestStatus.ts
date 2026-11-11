@@ -13,10 +13,13 @@ export type MyRequest = {
   createdAt: string;
 };
 
+// Phase 8 (contrast): badge BACKGROUNDS keep their hues; the TEXT on them is the per-theme
+// `on-*` token picked for contrast (dark text on Medium; on Low: white in light, dark in dark).
+// High stays white. Measured values: design-system/MASTER.md.
 export const PRIORITY_STYLES: Record<string, string> = {
   High: "bg-high text-white",
-  Medium: "bg-medium text-white",
-  Low: "bg-low text-white",
+  Medium: "bg-medium text-on-medium",
+  Low: "bg-low text-on-low",
   Unclassified: "bg-line text-ink-soft",
 };
 
@@ -26,9 +29,9 @@ export const PRIORITY_FILTERS = ["High", "Medium", "Low", "Unclassified"] as con
 export const priorityOf = (p: string | null) => p ?? "Unclassified";
 
 export const STATUS_STYLES: Record<string, string> = {
-  "In Review": "bg-medium/15 text-medium",
-  Approved: "bg-low/15 text-low",
-  Disbursed: "bg-low text-white",          // D2: the final positive outcome
+  "In Review": "bg-medium/15 text-medium-text",   // Phase 8: darker amber text in light (contrast)
+  Approved: "bg-low/15 text-low-text",            // Phase 8: darker green text in light (contrast)
+  Disbursed: "bg-low text-on-low",                // D2: the final positive outcome
   Rejected: "bg-kq-red/15 text-kq-red",
   Returned: "bg-ink-soft/15 text-ink-soft",
   Deferred: "bg-ink-soft/15 text-ink-soft",

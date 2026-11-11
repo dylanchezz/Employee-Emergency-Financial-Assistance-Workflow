@@ -9,25 +9,19 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch, downloadFile } from "../../lib/api";
+import { formatDateTime } from "@/app/lib/format";
+import { collapseRepeats } from "@/app/lib/audit";
 
 type AuditRow = { logId: number; loggedAt: string; actor: string; action: string };
-type Collapsed = { key: number; actor: string; action: string; first: string; last: string; count: number };
-
-function collapse(rows: AuditRow[]): Collapsed[] {
-  const out: Collapsed[] = [];
-  for (const r of rows) {
-    const prev = out[out.length - 1];
-    if (prev && prev.action === r.action && prev.actor === r.actor) {
-      prev.count += 1;
-      prev.last = r.loggedAt;
-    } else {
-      out.push({ key: r.logId, actor: r.actor, action: r.action, first: r.loggedAt, last: r.loggedAt, count: 1 });
-    }
-  }
-  return out;
+// Phase 8: the collapsing rule now lives in lib/audit.ts (shared with the admin Activity tab).
+function collapse(rows: AuditRow[]) {
+  return collapseRepeats(rows, (r) => `${r.action}|${r.actor}`).map((c) => ({
+    key: c.first.logId, actor: c.first.actor, action: c.first.action,
+    first: c.first.loggedAt, last: c.last.loggedAt, count: c.count,
+  }));
 }
 
-const when = (iso: string) => new Date(iso).toLocaleString();
+const when = (iso: string) => formatDateTime(iso);
 
 export default function AuditBox({ requestId }: { requestId: number }) {
   const [rows, setRows] = useState<AuditRow[] | null>(null);
@@ -70,7 +64,7 @@ export default function AuditBox({ requestId }: { requestId: number }) {
             <li key={l.key} className="text-sm">
               <span className="text-ink">{l.action}</span>
               {l.count > 1 && (
-                <span className="ml-1.5 rounded-full bg-medium/15 px-2 py-0.5 text-xs font-semibold text-medium">×{l.count}</span>
+                <span className="ml-1.5 rounded-full bg-medium/15 px-2 py-0.5 text-xs font-semibold text-medium-text">×{l.count}</span>
               )}
               <span className="block text-xs text-ink-soft">
                 {l.actor} · {l.count > 1 ? `${when(l.first)} → ${when(l.last)}` : when(l.first)}

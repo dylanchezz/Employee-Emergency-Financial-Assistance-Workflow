@@ -42,7 +42,7 @@ export default function ForgotPasswordPage() {
     <AuthCard title="Forgot your password?" subtitle="Enter your email and we'll send you a link to choose a new one.">
       {sentMessage ? (
         <div className="mt-6 space-y-3">
-          <p className="rounded-lg border border-low/30 bg-low/10 px-3.5 py-2.5 text-sm text-low" role="status">
+          <p className="rounded-lg border border-low/30 bg-low/10 px-3.5 py-2.5 text-sm text-low-text" role="status">
             {sentMessage}
           </p>
           <p className="text-sm text-ink-soft">

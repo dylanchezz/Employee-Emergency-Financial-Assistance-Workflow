@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { formatDate } from "@/app/lib/format";
 
 type Stats = {
   allTime: number;
@@ -51,7 +52,7 @@ export default function RequestStatsCard() {
           <>
             <span className="font-medium text-kq-red">You&apos;ve reached the limit of {stats.annualLimit} per 12 months</span>
             {" "}— a new request now would be rejected automatically
-            {stats.nextSlotOpensAt && <>; you can submit again from {new Date(stats.nextSlotOpensAt).toLocaleDateString()}</>}.
+            {stats.nextSlotOpensAt && <>; you can submit again from {formatDate(stats.nextSlotOpensAt)}</>}.
           </>
         ) : (
           <>

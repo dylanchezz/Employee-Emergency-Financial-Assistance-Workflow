@@ -9,6 +9,7 @@
 // strips those for the request's owner, so if one is present here the viewer is staff.
 
 import { TIER_ROLES } from "../lib/requestStatus";
+import { formatAmount, formatDateTime } from "@/app/lib/format";
 
 type Approval = { tier: number; approverName: string; decision: string; reason: string | null; decidedAt: string };
 type Payout = { amount: number; reference: string | null; disbursedByName: string; disbursedAt: string } | null;
@@ -26,7 +27,7 @@ export type TimelineInput = {
 type Event = { key: string; when: string | null; title: string; detail?: string; tone: "done" | "stop" | "now" | "paid" };
 
 const roleFor = (tier: number) => TIER_ROLES[tier - 1] ?? `Tier ${tier}`;
-const fmt = (iso: string) => new Date(iso).toLocaleString();
+const fmt = (iso: string) => formatDateTime(iso);
 
 function buildEvents(r: TimelineInput, viewerIsOwner: boolean): Event[] {
   const events: Event[] = [];
@@ -62,7 +63,7 @@ function buildEvents(r: TimelineInput, viewerIsOwner: boolean): Event[] {
     events.push({
       key: "paid",
       when: r.disbursement.disbursedAt,
-      title: `Disbursed — KES ${r.disbursement.amount.toLocaleString()}`,
+      title: `Disbursed — KES ${formatAmount(r.disbursement.amount)}`,
       detail: `by ${r.disbursement.disbursedByName} (Finance)${r.disbursement.reference ? ` · reference ${r.disbursement.reference}` : ""}`,
       tone: "paid",
     });
@@ -92,12 +93,13 @@ export default function RequestTimeline({ request, viewerIsOwner }: { request: T
   return (
     <ol className="mt-4 rounded-2xl border border-line bg-surface p-6">
       {events.map((e, i) => (
-        <li key={e.key} className="relative flex gap-4 pb-6 last:pb-0">
+        <li key={e.key} style={{ animationDelay: `${i * 50}ms` }}   /* Phase 8 (Part D) */
+          className="relative flex animate-fade-up gap-4 pb-6 last:pb-0">
           {/* the connecting line */}
           {i < events.length - 1 && <span aria-hidden className="absolute left-[5px] top-4 h-full w-px bg-line" />}
           <span aria-hidden className={`relative mt-1.5 h-3 w-3 shrink-0 rounded-full ${DOT[e.tone]}`} />
           <div className="min-w-0">
-            <p className={`font-medium ${e.tone === "now" ? "text-medium" : "text-ink"}`}>{e.title}</p>
+            <p className={`font-medium ${e.tone === "now" ? "text-medium-text" : "text-ink"}`}>{e.title}</p>
             {e.detail && <p className="mt-0.5 break-words text-sm text-ink-soft">{e.detail}</p>}
             <p className="mt-0.5 text-xs text-ink-soft">{e.when ? fmt(e.when) : "Now"}</p>
           </div>

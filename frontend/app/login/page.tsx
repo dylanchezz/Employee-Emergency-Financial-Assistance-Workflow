@@ -11,6 +11,8 @@ import {
   type TwoFactorChallenge,
 } from "@/app/lib/auth";
 import GoogleSignInButton from "@/app/components/GoogleSignInButton";
+import { formatTime } from "@/app/lib/format";
+import AuthBrandPanel from "@/app/components/AuthBrandPanel";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -64,7 +66,7 @@ function LoginForm() {
         const until = body?.lockedUntil ? new Date(body.lockedUntil) : null;
         setError(
           until && !isNaN(until.getTime())
-            ? `Too many failed sign-in attempts. Please try again at ${until.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`
+            ? `Too many failed sign-in attempts. Please try again at ${formatTime(until)}.`
             : body?.error ?? "Too many failed sign-in attempts. Please try again later."
         );
         return;
@@ -97,33 +99,11 @@ function LoginForm() {
   return (
     <main className="min-h-screen grid md:grid-cols-2">
       {/* Brand panel — the one bold red moment. */}
-      <aside className="relative hidden md:flex flex-col justify-between bg-kq-red text-white p-12 overflow-hidden">
-        <div
-          className="absolute inset-0 opacity-20"
-          style={{
-            background:
-              "radial-gradient(120% 90% at 100% 0%, var(--kq-red-deep) 0%, transparent 60%)",
-          }}
-        />
-        <div className="relative">
-          {/* Phase 4: the brand links back to the public landing page. */}
-          <Link href="/" className="font-[family-name:var(--font-heading)] text-xl font-semibold tracking-tight hover:underline">
-            Employee Welfare Portal
-          </Link>
-        </div>
-        <div className="relative max-w-sm">
-          <h1 className="font-[family-name:var(--font-heading)] text-4xl font-bold leading-tight">
-            Support when it matters most.
-          </h1>
-          <p className="mt-4 text-white/80 leading-relaxed">
-            A faster, fairer way to review employee emergency financial
-            assistance, so that urgent needs are seen first.
-          </p>
-        </div>
-        <div className="relative text-sm text-white/60">
-          Internal system · Authorized users only
-        </div>
-      </aside>
+      {/* Phase 8: the shared brand panel (was a copy in each auth page). */}
+      <AuthBrandPanel
+        title="Support when it matters most."
+        body="A faster, fairer way to review employee emergency financial assistance, so that urgent needs are seen first."
+      />
 
       {/* Form panel. */}
       <section className="flex items-center justify-center p-8 bg-surface">
@@ -138,7 +118,7 @@ function LoginForm() {
           <p className="mt-1 text-ink-soft">Sign in to continue.</p>
           {notice && (
             <p
-              className="mt-4 rounded-lg border border-low/30 bg-low/10 px-3.5 py-2.5 text-sm text-low"
+              className="mt-4 rounded-lg border border-low/30 bg-low/10 px-3.5 py-2.5 text-sm text-low-text"
               role="status"
             >
               {notice}
@@ -152,10 +132,11 @@ function LoginForm() {
             <input
               id="email"
               type="email"
+              autoComplete="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+              className="mt-1.5 w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
               placeholder="you@company.com"
             />
           </div>
@@ -173,10 +154,11 @@ function LoginForm() {
             <input
               id="password"
               type="password"
+              autoComplete="current-password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+              className="mt-1.5 w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
               placeholder="••••••••"
             />
           </div>

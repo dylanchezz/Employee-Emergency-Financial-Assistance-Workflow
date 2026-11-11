@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { formatDateTime } from "@/app/lib/format";
 
 type MyDeletion = {
   deletionId: number;
@@ -81,7 +82,7 @@ export default function AccountDeletionCard() {
         <div className="mt-2">
           <p className="text-sm text-ink">
             Your account deletion request is <span className="font-semibold">pending administrator approval</span>{" "}
-            (requested {new Date(current!.requestedAt).toLocaleString()}).
+            (requested {formatDateTime(current!.requestedAt)}).
           </p>
           <button
             onClick={cancel}
@@ -118,7 +119,7 @@ export default function AccountDeletionCard() {
                 maxLength={1000}
                 rows={2}
                 placeholder="Reason (optional)"
-                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                className="w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
               />
               <div className="flex gap-3">
                 <button
