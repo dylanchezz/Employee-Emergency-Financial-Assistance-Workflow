@@ -351,7 +351,10 @@ public class WelfareRequestRepository : IWelfareRequestRepository
                    (SELECT MIN(e.escalated_at) FROM escalations e
                      WHERE e.request_id = r.request_id AND e.tier = 4) AS Since,
                    o.name         AS OfficerName,
-                   o.email        AS OfficerEmail
+                   o.email        AS OfficerEmail,
+                   (SELECT pp.priority_level FROM priority_predictions pp
+                     WHERE pp.request_id = r.request_id
+                     ORDER BY pp.predicted_at DESC LIMIT 1) AS PriorityLevel   -- Phase 6 (F1)
             FROM welfare_requests r
             JOIN users u ON u.user_id = r.user_id
             LEFT JOIN users o ON o.user_id = r.claimed_by
@@ -371,7 +374,10 @@ public class WelfareRequestRepository : IWelfareRequestRepository
                    r.current_tier AS CurrentTier,
                    r.updated_at   AS Since,
                    o.name         AS OfficerName,
-                   o.email        AS OfficerEmail
+                   o.email        AS OfficerEmail,
+                   (SELECT pp.priority_level FROM priority_predictions pp
+                     WHERE pp.request_id = r.request_id
+                     ORDER BY pp.predicted_at DESC LIMIT 1) AS PriorityLevel   -- Phase 6 (F1)
             FROM welfare_requests r
             JOIN users u ON u.user_id = r.user_id
             LEFT JOIN users o ON o.user_id = r.claimed_by

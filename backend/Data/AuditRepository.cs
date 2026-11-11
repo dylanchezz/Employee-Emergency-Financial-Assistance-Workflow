@@ -10,6 +10,9 @@ public interface IAuditRepository
     // Has this exact action already been logged for this request? (Used by the escalation
     // worker to tell the FIRST HR-overdue alert from a repeat.)
     Task<bool> HasActionAsync(int requestId, string action);
+
+    // Phase 6 (F2 / F6): one request's whole trail, oldest first, with actor names.
+    Task<IEnumerable<AuditEntry>> GetForRequestAsync(int requestId);
 }
 
 public class AuditRepository : IAuditRepository
@@ -62,5 +65,22 @@ public class AuditRepository : IAuditRepository
         using var connection = _factory.CreateConnection();
         return await connection.ExecuteScalarAsync<bool>(
             sql, new { RequestId = requestId, Action = action });
+    }
+
+    public async Task<IEnumerable<AuditEntry>> GetForRequestAsync(int requestId)
+    {
+        const string sql = @"
+            SELECT a.log_id     AS LogId,
+                   a.request_id AS RequestId,
+                   a.actor_id   AS ActorId,
+                   u.name       AS ActorName,
+                   a.action     AS Action,
+                   a.logged_at  AS LoggedAt
+            FROM audit_logs a
+            LEFT JOIN users u ON u.user_id = a.actor_id
+            WHERE a.request_id = @RequestId
+            ORDER BY a.logged_at ASC, a.log_id ASC;";
+        using var connection = _factory.CreateConnection();
+        return await connection.QueryAsync<AuditEntry>(sql, new { RequestId = requestId });
     }
 }

@@ -58,6 +58,9 @@ CREATE TABLE users (
     -- C2 (migration 013): soft-delete. A deactivated account can't sign in; its history stays.
     is_active      BOOLEAN NOT NULL DEFAULT true,
     deactivated_at TIMESTAMPTZ,
+    -- Phase 6 / F3 (migration 014): last authenticated API call, throttled to ~1/min. "Active now"
+    -- = seen in the last 5 minutes (not live presence). NULL = not seen since 014.
+    last_seen_at   TIMESTAMPTZ,
     CONSTRAINT users_oauth_pair_chk
         CHECK ((oauth_provider IS NULL) = (oauth_subject IS NULL)),
     CONSTRAINT users_has_login_method_chk
