@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import GoogleSignInButton from "../components/GoogleSignInButton";
 import { LOGIN_PATH } from "@/app/lib/auth";
+import AuthBrandPanel from "@/app/components/AuthBrandPanel";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -82,33 +83,11 @@ export default function SignupPage() {
   return (
     <main className="min-h-screen grid md:grid-cols-2">
       {/* Brand panel — mirrors the login page. */}
-      <aside className="relative hidden md:flex flex-col justify-between bg-kq-red text-white p-12 overflow-hidden">
-        <div
-          className="absolute inset-0 opacity-20"
-          style={{
-            background:
-              "radial-gradient(120% 90% at 100% 0%, var(--kq-red-deep) 0%, transparent 60%)",
-          }}
-        />
-        <div className="relative">
-          {/* Phase 4: the brand links back to the public landing page. */}
-          <Link href="/" className="font-[family-name:var(--font-heading)] text-xl font-semibold tracking-tight hover:underline">
-            Employee Welfare Portal
-          </Link>
-        </div>
-        <div className="relative max-w-sm">
-          <h1 className="font-[family-name:var(--font-heading)] text-4xl font-bold leading-tight">
-            Create your account.
-          </h1>
-          <p className="mt-4 text-white/80 leading-relaxed">
-            Register to submit and track emergency financial assistance
-            requests.
-          </p>
-        </div>
-        <div className="relative text-sm text-white/60">
-          Internal system · Authorized users only
-        </div>
-      </aside>
+      {/* Phase 8: the shared brand panel (was a copy in each auth page). */}
+      <AuthBrandPanel
+        title="Create your account."
+        body="Register to submit and track emergency financial assistance requests."
+      />
 
       {/* Form panel. */}
       <section className="flex items-center justify-center p-8 bg-surface">
@@ -132,7 +111,7 @@ export default function SignupPage() {
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+              className="mt-1.5 w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
               placeholder="Jane Doe"
             />
           </div>
@@ -144,10 +123,11 @@ export default function SignupPage() {
             <input
               id="email"
               type="email"
+              autoComplete="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+              className="mt-1.5 w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
               placeholder="you@company.com"
             />
           </div>
@@ -164,7 +144,7 @@ export default function SignupPage() {
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+              className="mt-1.5 w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
               placeholder="At least 8 characters"
             />
           </div>
@@ -182,7 +162,7 @@ export default function SignupPage() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               aria-invalid={confirmPassword.length > 0 && confirmPassword !== password}
-              className="mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+              className="mt-1.5 w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
               placeholder="••••••••"
             />
             {confirmPassword.length > 0 && confirmPassword !== password && (
@@ -201,7 +181,7 @@ export default function SignupPage() {
               required
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+              className="mt-1.5 w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
             >
               <option value="" disabled>
                 {departments.length ? "Choose your department" : "Loading departments…"}

@@ -246,18 +246,58 @@ public static class AdminEndpoints
             int id,
             ChooseDepartmentRequest request,
             IUserRepository users,
-            IDepartmentRepository departments) =>
+            IDepartmentRepository departments,
+            IEmailService email,
+            ILoggerFactory loggerFactory) =>
         {
+            // Phase 8 (Part C): read the OLD department first, so the courtesy email can name
+            // old → new, and so a "change" to the same department is recognised as a no-op.
+            var before = await users.GetDepartmentByIdAsync(id);
+
             var name = request.Department?.Trim() ?? string.Empty;
             if (name.Length == 0 || !await departments.ExistsAsync(name))
             {
                 return Results.BadRequest(new { error = "Choose an existing department." });
             }
+            if (before is null)
+            {
+                return Results.NotFound(new { error = "User not found." });
+            }
+
+            // Same department → nothing changed, so nobody is emailed (and nothing is written).
+            if (string.Equals(before.Trim(), name, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Ok(new { userId = id, department = before, notificationEmailSent = false });
+            }
+
             if (!await users.SetDepartmentAsync(id, name))
             {
                 return Results.NotFound(new { error = "User not found." });
             }
-            return Results.Ok(new { userId = id, department = name });
+
+            // Best-effort courtesy email — an ACCOUNT-level event, so email + app log only (never
+            // the request-scoped audit_logs or the notification bell). The change has already
+            // succeeded; SendAsync never throws (returns false on failure), so this can't undo it.
+            // Only this ADMIN path emails; the user's own one-time choice (PUT /api/me/department)
+            // stays silent — that was their own action.
+            var sent = false;
+            var contact = await users.GetContactByIdAsync(id);
+            if (contact is { } c && !string.IsNullOrWhiteSpace(c.Email))
+            {
+                sent = await email.SendAsync(
+                    c.Email,
+                    "Your Employee Welfare Portal department has been updated",
+                    $"Hello {c.Name},\n\n" +
+                    $"An administrator has updated your department on the Employee Welfare Portal " +
+                    $"from \"{before}\" to \"{name}\".\n\n" +
+                    "If you believe this is a mistake, contact your administrator.\n");
+            }
+            var logger = loggerFactory.CreateLogger("Account.Department");
+            logger.LogInformation(
+                "Admin changed department for user {UserId}: {Before} -> {After}. Notice email: {Result}.",
+                id, before, name, sent ? "sent" : "NOT sent");
+
+            return Results.Ok(new { userId = id, department = name, notificationEmailSent = sent });
         });
     }
 }

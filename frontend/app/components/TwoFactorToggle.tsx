@@ -58,7 +58,7 @@ export default function TwoFactorToggle() {
         title={enabled ? "Two-step sign-in is on. Click to turn it off." : "Two-step sign-in is off. Click to turn it on."}
         className="rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-canvas disabled:opacity-60"
       >
-        2-step sign-in: <span className={enabled ? "text-low" : "text-ink-soft"}>{enabled ? "On" : "Off"}</span>
+        2-step sign-in: <span className={enabled ? "text-low-text" : "text-ink-soft"}>{enabled ? "On" : "Off"}</span>
       </button>
       {error && (
         <p className="mt-1 max-w-[16rem] text-right text-xs text-kq-red" role="alert">

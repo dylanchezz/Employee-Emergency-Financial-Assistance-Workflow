@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { apiFetch } from "@/app/lib/api";
-import { statusLabel } from "@/app/lib/requestStatus";
+import { PRIORITY_STYLES, statusLabel, statusStyle } from "@/app/lib/requestStatus";
+import { TierProgress } from "@/app/components/ui/Ui";
 import RequestTimeline from "@/app/components/RequestTimeline";
 import { LOGIN_PATH } from "@/app/lib/auth";
+import { formatAmount, formatDate, formatDateTime } from "@/app/lib/format";
 
 // The same categories the new-request form offers, so a resubmit can change category too.
 const RESUBMIT_CATEGORIES = [
@@ -67,11 +69,6 @@ type RequestDetail = {
 };
 
 
-const PRIORITY_STYLES: Record<string, string> = {
-  High: "bg-high text-white",
-  Medium: "bg-medium text-white",
-  Low: "bg-low text-white",
-};
 
 // Read the current user's id from the JWT's "sub" claim (login stores the token
 // but not the id). Returns null if it can't be read.
@@ -127,7 +124,7 @@ function describeFactor(
         raisesPriority,
       };
     case "requested_amount":
-      return { text: `Requested amount (KES ${detail.amount.toLocaleString()}) — ${dir}`, raisesPriority };
+      return { text: `Requested amount (KES ${formatAmount(detail.amount)}) — ${dir}`, raisesPriority };
     case "salary":
       return { text: `Stated salary — ${dir}`, raisesPriority };
     case "employment_duration_months":
@@ -435,7 +432,7 @@ export default function RequestDetailPage() {
   return (
     // Phase 3: content inside the AppShell (which provides <main>).
     <div>
-      <div className="mx-auto w-full max-w-2xl">
+      <div className="mx-auto w-full max-w-6xl">
         <button
           onClick={() =>
             router.push(
@@ -458,14 +455,22 @@ export default function RequestDetailPage() {
 
         {detail && (
           <>
-            <div className="mt-4 flex items-start justify-between">
-              <div>
-                <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold text-ink">
-                  Request #{detail.requestId}
-                </h1>
+            {/* Phase 8 (UI pass): header with the status at a glance, then two columns on desktop —
+                the request and its explanation on the left, everything you can DO on the right (sticky). */}
+            <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-[family-name:var(--font-heading)] text-3xl font-bold tracking-tight text-ink">
+                    Request #{detail.requestId}
+                  </h1>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyle(detail.status)}`}>
+                    {statusLabel(detail.status)}
+                  </span>
+                </div>
                 <p className="mt-1 text-ink-soft">
-                  {detail.requesterName} · {detail.category}
+                  {detail.category} · requested by {detail.requesterName} on {formatDate(detail.createdAt)}
                 </p>
+                {detail.status === "In Review" && <div className="mt-2"><TierProgress tier={detail.currentTier} /></div>}
               </div>
               {detail.priorityLevel && (
                 <span
@@ -478,378 +483,406 @@ export default function RequestDetailPage() {
               )}
             </div>
 
-            {/* Request facts */}
-            <div className="mt-6 grid grid-cols-2 gap-4 rounded-2xl border border-line bg-surface p-6 text-sm">
-              <Fact label="Amount (KES)" value={detail.amount.toLocaleString()} />
-              <Fact label="Status" value={statusLabel(detail.status)} />
-              <Fact label="Current tier" value={String(detail.currentTier)} />
-              <div>
-                <p className="text-ink-soft">Documents</p>
-                {detail.hasDocuments ? (
-                  <button
-                    onClick={viewDocument}
-                    className="mt-0.5 text-kq-red hover:underline"
-                  >
-                    View document
-                  </button>
-                ) : (
-                  <p className="mt-0.5 text-ink">None</p>
-                )}
-                {docError && <p className="mt-1 text-xs text-kq-red">{docError}</p>}
-              </div>
-              {detail.description && (
-                <div className="col-span-2">
-                  <p className="text-ink-soft">Description</p>
-                  <p className="mt-0.5 text-ink">{detail.description}</p>
-                </div>
-              )}
-              {detail.validationNote && (
-                <div className="col-span-2">
-                  <p className="text-ink-soft">Validation note</p>
-                  <p className="mt-0.5 text-medium">{detail.validationNote}</p>
-                </div>
-              )}
-              {detail.status === "Deferred" && detail.deferReason && (
-                <div className="col-span-2">
-                  <p className="text-ink-soft">Reason for deferral</p>
-                  <p className="mt-0.5 text-ink">{detail.deferReason}</p>
-                </div>
-              )}
-              {/* D2: the payout record — the request's final, positive outcome. */}
-              {detail.disbursement && (
-                <div className="col-span-2 rounded-xl border border-low/30 bg-low/10 p-4">
-                  <p className="font-medium text-low">
-                    Paid out: KES {detail.disbursement.amount.toLocaleString()}
-                  </p>
-                  <p className="mt-1 text-ink-soft">
-                    By {detail.disbursement.disbursedByName} (Finance) on{" "}
-                    {new Date(detail.disbursement.disbursedAt).toLocaleString()}
-                    {detail.disbursement.reference && <> · Reference: {detail.disbursement.reference}</>}
-                  </p>
-                  {detail.disbursement.note && (
-                    <p className="mt-1 text-ink-soft">Internal note: {detail.disbursement.note}</p>
+            <div className="mt-6 grid gap-6 lg:grid-cols-3">
+              <div className="min-w-0 space-y-8 lg:col-span-2">
+                {/* Request facts */}
+                <div className="grid grid-cols-2 gap-x-6 gap-y-5 rounded-2xl border border-line bg-surface p-6 text-sm sm:grid-cols-4">
+                  <Fact label="Amount" value={`KES ${formatAmount(detail.amount)}`} strong />
+                  <Fact label="Status" value={statusLabel(detail.status)} />
+                  <Fact label="Submitted" value={formatDate(detail.createdAt)} />
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wider text-ink-soft">Documents</p>
+                    {detail.hasDocuments ? (
+                      <button
+                        onClick={viewDocument}
+                        className="mt-0.5 text-kq-red hover:underline"
+                      >
+                        View document
+                      </button>
+                    ) : (
+                      <p className="mt-0.5 text-ink">None</p>
+                    )}
+                    {docError && <p className="mt-1 text-xs text-kq-red">{docError}</p>}
+                  </div>
+                  {detail.description && (
+                    <div className="col-span-2 sm:col-span-4">
+                      <p className="text-xs font-medium uppercase tracking-wider text-ink-soft">Description</p>
+                      <p className="mt-0.5 text-ink">{detail.description}</p>
+                    </div>
                   )}
-                </div>
-              )}
-            </div>
-
-            {/* Phase 5 (E3): the previous approver's note for this reviewer — distinct from the model's
-                explanation and the validation note. The backend only sends it to staff. */}
-            {detail.forwardNote && (
-              <div className="mt-6 rounded-2xl border border-ink/15 border-l-4 border-l-ink bg-surface p-5">
-                <p className="text-xs font-semibold uppercase tracking-wider text-ink-soft">
-                  Note from the {detail.forwardNote.fromRole}
-                </p>
-                <p className="mt-1.5 whitespace-pre-wrap text-ink">{detail.forwardNote.note}</p>
-                <p className="mt-1.5 text-xs text-ink-soft">
-                  {detail.forwardNote.approverName} · {new Date(detail.forwardNote.decidedAt).toLocaleString()}
-                </p>
-              </div>
-            )}
-
-            {/* SHAP explanation — plain-language summary first, then the detail bars. */}
-            <h2 className="mt-8 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
-              Why this priority?
-            </h2>
-
-            {summary && (
-              <p className="mt-2 rounded-xl border border-line bg-canvas p-4 text-ink">
-                {summary}
-              </p>
-            )}
-
-            {/* Priority history — shown once the request has been resubmitted and
-                re-classified (more than one prediction). Newest first from the backend. */}
-            {detail.predictionHistory && detail.predictionHistory.length > 1 && (
-              <p className="mt-2 text-xs text-ink-soft">
-                Priority history:{" "}
-                {detail.predictionHistory
-                  .map((p) => p.priorityLevel)
-                  .reverse()
-                  .join(" → ")}{" "}
-                (updated after resubmission)
-              </p>
-            )}
-
-            {described.length > 0 ? (
-              <div className="mt-4 rounded-2xl border border-line bg-surface p-6">
-                <div className="flex items-center justify-between text-xs text-ink-soft">
-                  <span>Contributing factors (for this request)</span>
-                  <span>
-                    <span className="text-high">↑ higher</span> ·{" "}
-                    <span className="text-low">↓ lower</span> priority
-                  </span>
-                </div>
-                <div className="mt-4 space-y-3">
-                  {described.map((x) => {
-                    const width = `${(Math.abs(x.factor.impact) / maxImpact) * 100}%`;
-                    const up = x.d.raisesPriority;
-                    return (
-                      <div key={x.factor.feature}>
-                        <div className="flex items-center justify-between gap-3 text-sm">
-                          <span className="text-ink">{x.d.text}</span>
-                          <span className={`shrink-0 ${up ? "text-high" : "text-low"}`}>
-                            {up ? "↑ higher" : "↓ lower"}
-                          </span>
-                        </div>
-                        <div className="mt-1 h-2 w-full rounded-full bg-canvas">
-                          <div
-                            className={`h-2 rounded-full ${up ? "bg-high" : "bg-low"}`}
-                            style={{ width }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="mt-4 border-t border-line pt-3 text-xs text-ink-soft">
-                  These are the factors that most influenced the model&apos;s ranking of this
-                  request — a transparency aid, not a confidence score. The final decision is the approver&apos;s.
-                </p>
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-ink-soft">
-                No explanation available (this request was not classified).
-              </p>
-            )}
-
-            {/* Phase 5 (E2): the full dated trail — replaces the old undated "Approval history" list. */}
-            <h2 className="mt-8 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
-              Timeline
-            </h2>
-            <RequestTimeline request={detail} viewerIsOwner={isOwner} />
-
-            {/* Edit & resubmit — owner only, while the request is Returned. */}
-            {canResubmit && (
-              <div className="mt-8 rounded-2xl border border-medium/40 bg-surface p-6">
-                <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
-                  This request was returned for clarification
-                </h2>
-                <p className="mt-1 text-sm text-ink-soft">
-                  {detail.validationNote ??
-                    detail.approvals.find((a) => a.decision === "Returned")?.reason ??
-                    "Please review the comments above, make your changes, and resubmit."}
-                </p>
-
-                {!editing ? (
-                  <button
-                    onClick={openEditor}
-                    className="mt-4 rounded-lg bg-kq-red px-4 py-2 text-sm font-medium text-white transition hover:bg-kq-red-deep"
-                  >
-                    Edit &amp; resubmit
-                  </button>
-                ) : (
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <label className="block text-sm text-ink-soft">Category</label>
-                      <select
-                        value={editCategory}
-                        onChange={(e) => handleEditCategoryChange(e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
-                      >
-                        <option value="">Select a category…</option>
-                        {RESUBMIT_CATEGORIES.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
+                  {detail.validationNote && (
+                    <div className="col-span-2 sm:col-span-4">
+                      <p className="text-xs font-medium uppercase tracking-wider text-ink-soft">Validation note</p>
+                      <p className="mt-0.5 text-medium-text">{detail.validationNote}</p>
                     </div>
-                    <div>
-                      <label className="block text-sm text-ink-soft">Amount (KES)</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={editAmount}
-                        onChange={(e) => setEditAmount(e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
-                      />
+                  )}
+                  {detail.status === "Deferred" && detail.deferReason && (
+                    <div className="col-span-2 sm:col-span-4">
+                      <p className="text-xs font-medium uppercase tracking-wider text-ink-soft">Reason for deferral</p>
+                      <p className="mt-0.5 text-ink">{detail.deferReason}</p>
                     </div>
-                    <div>
-                      <label className="block text-sm text-ink-soft">Description</label>
-                      <textarea
-                        rows={3}
-                        value={editDescription}
-                        onChange={(e) => {
-                          setEditDescription(e.target.value);
-                          setEditDescIsTemplate(false);
-                        }}
-                        className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
-                        placeholder="Explain or clarify your request…"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm text-ink-soft">
-                        Supporting document (optional — replaces any existing one)
-                      </label>
-                      <input
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
-                        className="mt-1 block w-full text-sm text-ink-soft file:mr-3 file:rounded-lg file:border-0 file:bg-canvas file:px-3 file:py-2 file:text-sm file:text-ink"
-                      />
-                    </div>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={resubmit}
-                        disabled={resubmitting}
-                        className="rounded-lg bg-kq-red px-4 py-2 text-sm font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60"
-                      >
-                        {resubmitting ? "Resubmitting…" : "Resubmit"}
-                      </button>
-                      <button
-                        onClick={() => setEditing(false)}
-                        disabled={resubmitting}
-                        className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas disabled:opacity-60"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {resubmitMsg && <p className="mt-3 text-sm text-ink">{resubmitMsg}</p>}
-              </div>
-            )}
-
-            {/* D2: Finance payout — post-approval, keyed on status (not tier/claim). */}
-            {canDisburse && (
-              <div className="mt-8 rounded-2xl border border-low/30 border-l-4 border-l-low bg-surface p-6">
-                <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
-                  Disburse this request
-                </h2>
-                <p className="mt-1 text-sm text-ink-soft">
-                  Fully approved by HR. Pay out{" "}
-                  <span className="font-semibold text-ink">KES {detail.amount.toLocaleString()}</span> — the
-                  approved amount (fixed; no partial payments).
-                </p>
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <input
-                    value={disburseRef}
-                    onChange={(e) => setDisburseRef(e.target.value)}
-                    maxLength={100}
-                    placeholder="Payment reference (optional)"
-                    className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
-                  />
-                  <input
-                    value={disburseNote}
-                    onChange={(e) => setDisburseNote(e.target.value)}
-                    placeholder="Internal note (optional)"
-                    className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
-                  />
-                </div>
-                <button
-                  onClick={disburse}
-                  disabled={disbursing}
-                  className="mt-4 rounded-lg bg-low px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-60"
-                >
-                  {disbursing ? "Recording…" : "Disburse"}
-                </button>
-                {disburseMsg && (
-                  <p className="mt-3 text-sm text-kq-red" role="alert">
-                    {disburseMsg}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Claim / decision area — only for an approver whose tier this request is at. */}
-            {atMyTier && (
-              <div className="mt-8 rounded-2xl border border-line bg-surface p-6">
-                {/* Claim state + claim/release controls */}
-                {heldByOther ? (
-                  <p className="text-sm text-ink-soft">
-                    This request is currently claimed by another officer. You can act on
-                    it only if they release it.
-                  </p>
-                ) : iHoldIt ? (
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-low">You have claimed this request.</p>
-                    <button
-                      onClick={release}
-                      disabled={submitting}
-                      className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-canvas disabled:opacity-60"
-                    >
-                      Release
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-ink-soft">
-                      Claim this request to review and act on it.
-                    </p>
-                    <button
-                      onClick={claim}
-                      disabled={submitting || !canClaim}
-                      className="rounded-lg bg-kq-red px-4 py-2 text-sm font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60"
-                    >
-                      Claim
-                    </button>
-                  </div>
-                )}
-
-                {/* Decision controls — only when I hold the claim. */}
-                {canDecide && (
-                  <div className="mt-5 border-t border-line pt-5">
-                    <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
-                      Your decision
-                    </h2>
-                    <label className="mt-3 block text-sm text-ink-soft">
-                      Comment — <span className="font-medium text-ink">required</span> to reject, return or defer
-                      (the employee sees it). On <span className="font-medium text-ink">Approve</span> it&apos;s an
-                      optional note for the next approver (the employee doesn&apos;t see it).
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
-                      maxLength={1000}
-                      placeholder="Reason, or a note for the next approver (optional on Approve)…"
-                    />
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      <button
-                        onClick={() => decide("Approve")}
-                        disabled={submitting}
-                        className="rounded-lg bg-low px-4 py-2 font-medium text-white transition hover:opacity-90 disabled:opacity-60"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => decide("Return")}
-                        disabled={submitting}
-                        className="rounded-lg bg-medium px-4 py-2 font-medium text-white transition hover:opacity-90 disabled:opacity-60"
-                      >
-                        Return
-                      </button>
-                      <button
-                        onClick={() => decide("Reject")}
-                        disabled={submitting}
-                        className="rounded-lg bg-kq-red px-4 py-2 font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60"
-                      >
-                        Reject
-                      </button>
-                      {isFinance && (
-                        <button
-                          onClick={() => decide("Defer")}
-                          disabled={submitting}
-                          className="rounded-lg border border-ink-soft px-4 py-2 font-medium text-ink transition hover:bg-canvas disabled:opacity-60"
-                        >
-                          Defer
-                        </button>
+                  )}
+                  {/* D2: the payout record — the request's final, positive outcome. */}
+                  {detail.disbursement && (
+                    <div className="col-span-2 sm:col-span-4 rounded-xl border border-low/30 bg-low/10 p-4">
+                      <p className="font-medium text-low-text">
+                        Paid out: KES {formatAmount(detail.disbursement.amount)}
+                      </p>
+                      <p className="mt-1 text-ink-soft">
+                        By {detail.disbursement.disbursedByName} (Finance) on{" "}
+                        {formatDateTime(detail.disbursement.disbursedAt)}
+                        {detail.disbursement.reference && <> · Reference: {detail.disbursement.reference}</>}
+                      </p>
+                      {detail.disbursement.note && (
+                        <p className="mt-1 text-ink-soft">Internal note: {detail.disbursement.note}</p>
                       )}
                     </div>
+                  )}
+                </div>
+
+                {/* Phase 5 (E3): the previous approver's note for this reviewer — distinct from the model's
+                    explanation and the validation note. The backend only sends it to staff. */}
+                {detail.forwardNote && (
+                  <div className="rounded-2xl border border-ink/15 border-l-4 border-l-ink bg-surface p-5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-ink-soft">
+                      Note from the {detail.forwardNote.fromRole}
+                    </p>
+                    <p className="mt-1.5 whitespace-pre-wrap text-ink">{detail.forwardNote.note}</p>
+                    <p className="mt-1.5 text-xs text-ink-soft">
+                      {detail.forwardNote.approverName} · {formatDateTime(detail.forwardNote.decidedAt)}
+                    </p>
                   </div>
                 )}
 
-                {message && <p className="mt-4 text-sm text-ink">{message}</p>}
-              </div>
-            )}
+                {/* SHAP explanation — plain-language summary first, then the detail bars. */}
+                <section>
+                <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
+                  Why this priority?
+                </h2>
 
-            {/* Messages for non-actionable states (e.g. an employee viewing, or over-cap). */}
-            {!atMyTier && message && (
-              <p className="mt-6 text-sm text-ink">{message}</p>
-            )}
+                {summary && (
+                  <p className="mt-2 rounded-xl border border-line bg-canvas p-4 text-ink">
+                    {summary}
+                  </p>
+                )}
+
+                {/* Priority history — shown once the request has been resubmitted and
+                    re-classified (more than one prediction). Newest first from the backend. */}
+                {detail.predictionHistory && detail.predictionHistory.length > 1 && (
+                  <p className="mt-2 text-xs text-ink-soft">
+                    Priority history:{" "}
+                    {detail.predictionHistory
+                      .map((p) => p.priorityLevel)
+                      .reverse()
+                      .join(" → ")}{" "}
+                    (updated after resubmission)
+                  </p>
+                )}
+
+                {described.length > 0 ? (
+                  <div className="mt-4 rounded-2xl border border-line bg-surface p-6">
+                    <div className="flex items-center justify-between text-xs text-ink-soft">
+                      <span>Contributing factors (for this request)</span>
+                      <span>
+                        <span className="text-high">↑ higher</span> ·{" "}
+                        <span className="text-low-text">↓ lower</span> priority
+                      </span>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {described.map((x) => {
+                        const width = `${(Math.abs(x.factor.impact) / maxImpact) * 100}%`;
+                        const up = x.d.raisesPriority;
+                        return (
+                          <div key={x.factor.feature}>
+                            <div className="flex items-center justify-between gap-3 text-sm">
+                              <span className="text-ink">{x.d.text}</span>
+                              <span className={`shrink-0 ${up ? "text-high" : "text-low-text"}`}>
+                                {up ? "↑ higher" : "↓ lower"}
+                              </span>
+                            </div>
+                            <div className="mt-1 h-2 w-full rounded-full bg-canvas">
+                              <div
+                                className={`h-2 rounded-full ${up ? "bg-high" : "bg-low"}`}
+                                style={{ width }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-4 border-t border-line pt-3 text-xs text-ink-soft">
+                      These are the factors that most influenced the model&apos;s ranking of this
+                      request — a transparency aid, not a confidence score. The final decision is the approver&apos;s.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-ink-soft">
+                    No explanation available (this request was not classified).
+                  </p>
+                )}
+                </section>
+
+                {/* Phase 5 (E2): the full dated trail — replaces the old undated "Approval history" list. */}
+                <section>
+                <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
+                  Timeline
+                </h2>
+                <RequestTimeline request={detail} viewerIsOwner={isOwner} />
+                </section>
+
+                {/* Edit & resubmit — owner only, while the request is Returned. */}
+                {canResubmit && (
+                  <div className="rounded-2xl border border-medium/40 bg-surface p-6">
+                    <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
+                      This request was returned for clarification
+                    </h2>
+                    <p className="mt-1 text-sm text-ink-soft">
+                      {detail.validationNote ??
+                        detail.approvals.find((a) => a.decision === "Returned")?.reason ??
+                        "Please review the comments above, make your changes, and resubmit."}
+                    </p>
+
+                    {!editing ? (
+                      <button
+                        onClick={openEditor}
+                        className="mt-4 rounded-lg bg-kq-red px-4 py-2 text-sm font-medium text-white transition hover:bg-kq-red-deep"
+                      >
+                        Edit &amp; resubmit
+                      </button>
+                    ) : (
+                      <div className="mt-4 space-y-4">
+                        <div>
+                          <label className="block text-sm text-ink-soft">Category</label>
+                          <select
+                            value={editCategory}
+                            onChange={(e) => handleEditCategoryChange(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                          >
+                            <option value="">Select a category…</option>
+                            {RESUBMIT_CATEGORIES.map((c) => (
+                              <option key={c} value={c}>
+                                {c}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm text-ink-soft">Amount (KES)</label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={editAmount}
+                            onChange={(e) => setEditAmount(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm text-ink-soft">Description</label>
+                          <textarea
+                            rows={3}
+                            value={editDescription}
+                            onChange={(e) => {
+                              setEditDescription(e.target.value);
+                              setEditDescIsTemplate(false);
+                            }}
+                            className="mt-1 w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                            placeholder="Explain or clarify your request…"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm text-ink-soft">
+                            Supporting document (optional — replaces any existing one)
+                          </label>
+                          <input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
+                            className="mt-1 block w-full text-sm text-ink-soft file:mr-3 file:rounded-lg file:border-0 file:bg-canvas file:px-3 file:py-2 file:text-sm file:text-ink"
+                          />
+                        </div>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={resubmit}
+                            disabled={resubmitting}
+                            className="rounded-lg bg-kq-red px-4 py-2 text-sm font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60"
+                          >
+                            {resubmitting ? "Resubmitting…" : "Resubmit"}
+                          </button>
+                          <button
+                            onClick={() => setEditing(false)}
+                            disabled={resubmitting}
+                            className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink transition hover:bg-canvas disabled:opacity-60"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {resubmitMsg && <p className="mt-3 text-sm text-ink">{resubmitMsg}</p>}
+                  </div>
+                )}
+
+              </div>
+
+              {/* Right column: actions + status. Sticky under the navbar on desktop. */}
+              <aside className={`space-y-4 lg:sticky lg:top-24 lg:self-start ${
+                // On a phone, put the actions FIRST so a reviewer doesn't scroll past everything to act.
+                atMyTier || canDisburse ? "order-first lg:order-none" : ""
+              }`}>
+                {/* D2: Finance payout — post-approval, keyed on status (not tier/claim). */}
+                {canDisburse && (
+                  <div className="rounded-2xl border border-low/30 border-l-4 border-l-low bg-surface p-6">
+                    <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
+                      Disburse this request
+                    </h2>
+                    <p className="mt-1 text-sm text-ink-soft">
+                      Fully approved by HR. Pay out{" "}
+                      <span className="font-semibold text-ink">KES {formatAmount(detail.amount)}</span> — the
+                      approved amount (fixed; no partial payments).
+                    </p>
+                    <div className="mt-4 grid grid-cols-1 gap-3">
+                      <input
+                        value={disburseRef}
+                        onChange={(e) => setDisburseRef(e.target.value)}
+                        maxLength={100}
+                        placeholder="Payment reference (optional)"
+                        className="rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                      />
+                      <input
+                        value={disburseNote}
+                        onChange={(e) => setDisburseNote(e.target.value)}
+                        placeholder="Internal note (optional)"
+                        className="rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                      />
+                    </div>
+                    <button
+                      onClick={disburse}
+                      disabled={disbursing}
+                      className="mt-4 h-10 w-full rounded-lg bg-low px-4 text-sm font-medium text-on-low transition hover:opacity-90 disabled:opacity-60"
+                    >
+                      {disbursing ? "Recording…" : "Disburse"}
+                    </button>
+                    {disburseMsg && (
+                      <p className="mt-3 text-sm text-kq-red" role="alert">
+                        {disburseMsg}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Claim / decision area — only for an approver whose tier this request is at. */}
+                {atMyTier && (
+                  <div className="rounded-2xl border-2 border-kq-red/20 bg-surface p-6 shadow-sm">
+                    {/* Claim state + claim/release controls */}
+                    {heldByOther ? (
+                      <p className="text-sm text-ink-soft">
+                        This request is currently claimed by another officer. You can act on
+                        it only if they release it.
+                      </p>
+                    ) : iHoldIt ? (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm text-low-text">You have claimed this request.</p>
+                        <button
+                          onClick={release}
+                          disabled={submitting}
+                          className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-canvas disabled:opacity-60"
+                        >
+                          Release
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm text-ink-soft">
+                          Claim this request to review and act on it.
+                        </p>
+                        <button
+                          onClick={claim}
+                          disabled={submitting || !canClaim}
+                          className="rounded-lg bg-kq-red px-4 py-2 text-sm font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60"
+                        >
+                          Claim
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Decision controls — only when I hold the claim. */}
+                    {canDecide && (
+                      <div className="mt-5 border-t border-line pt-5">
+                        <h2 className="font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">
+                          Your decision
+                        </h2>
+                        <label className="mt-3 block text-sm text-ink-soft">
+                          Comment — <span className="font-medium text-ink">required</span> to reject, return or defer
+                          (the employee sees it). On <span className="font-medium text-ink">Approve</span> it&apos;s an
+                          optional note for the next approver (the employee doesn&apos;t see it).
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={reason}
+                          onChange={(e) => setReason(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+                          maxLength={1000}
+                          placeholder="Reason, or a note for the next approver (optional on Approve)…"
+                        />
+                        <div className="mt-4 flex flex-wrap gap-3">
+                          <button
+                            onClick={() => decide("Approve")}
+                            disabled={submitting}
+                            className="h-10 flex-1 rounded-lg bg-low px-4 font-medium text-on-low transition hover:opacity-90 disabled:opacity-60"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => decide("Return")}
+                            disabled={submitting}
+                            className="h-10 flex-1 rounded-lg bg-medium px-4 font-medium text-on-medium transition hover:opacity-90 disabled:opacity-60"
+                          >
+                            Return
+                          </button>
+                          <button
+                            onClick={() => decide("Reject")}
+                            disabled={submitting}
+                            className="h-10 flex-1 rounded-lg bg-kq-red px-4 font-medium text-white transition hover:bg-kq-red-deep disabled:opacity-60"
+                          >
+                            Reject
+                          </button>
+                          {isFinance && (
+                            <button
+                              onClick={() => decide("Defer")}
+                              disabled={submitting}
+                              className="h-10 flex-1 rounded-lg border border-ink-soft px-4 font-medium text-ink transition hover:bg-canvas disabled:opacity-60"
+                            >
+                              Defer
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {message && <p className="mt-4 text-sm text-ink">{message}</p>}
+                  </div>
+                )}
+
+                {/* Always-present summary, so the right column is never empty for a viewer who can't act. */}
+                {!atMyTier && !canDisburse && (
+                  <div className="rounded-2xl border border-line bg-surface p-5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-ink-soft">Where it is now</p>
+                    <p className="mt-2 font-medium text-ink">{statusLabel(detail.status)}</p>
+                    {detail.status === "In Review" && <div className="mt-2"><TierProgress tier={detail.currentTier} /></div>}
+                    <p className="mt-3 text-sm text-ink-soft">
+                      {isOwner
+                        ? "You'll be notified when it moves. The full history is in the timeline."
+                        : "You can't act on this request at the moment. The timeline shows every step so far."}
+                    </p>
+                  </div>
+                )}
+                {/* Messages for non-actionable states (e.g. an employee viewing, or over-cap). */}
+                {!atMyTier && message && (
+                  <p className="rounded-xl border border-line bg-surface p-4 text-sm text-ink" role="status">{message}</p>
+                )}
+              </aside>
+            </div>
           </>
         )}
       </div>
@@ -857,11 +890,11 @@ export default function RequestDetailPage() {
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
+function Fact({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return (
     <div>
-      <p className="text-ink-soft">{label}</p>
-      <p className="mt-0.5 text-ink">{value}</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-ink-soft">{label}</p>
+      <p className={`mt-1 ${strong ? "font-[family-name:var(--font-heading)] text-xl font-bold text-ink" : "text-ink"}`}>{value}</p>
     </div>
   );
 }

@@ -4,6 +4,9 @@
   /*Brand*/
   --kq-red: #c8102e;
   --kq-red-deep: #9e0c24;
+  /*Phase 8: red used as TEXT (links, errors). Same as --kq-red in light; lifted slightly in dark
+    so it reads at >= 4.5:1 there. Button/brand backgrounds keep --kq-red.*/
+  --kq-red-text: #c8102e;
 
   /*Neutrals*/
   --ink: #1a1d21;
@@ -11,11 +14,19 @@
   --surface: #ffffff;
   --canvas: #f6f4f1;
   --line: #e4e0db;
+  /*Phase 8: form-input borders only (>= 3:1 non-text contrast). Cards keep the soft --line.*/
+  --line-strong: #9a8b78;
 
   /*Status(priority badges)*/
   --high: #c8102e;
   --medium: #e08a1e;
   --low: #2e8b57;
+  /*Phase 8 (contrast): text ON the solid badges, and status text on the light tints. Same hues,
+    picked per theme so each reaches 4.5:1 where it can (see design-system/MASTER.md).*/
+  --on-medium: #1a1d21;
+  --on-low: #ffffff;
+  --medium-text: #915a13;
+  --low-text: #257046;
 
   /*Always-dark band (landing About) - stays dark in both themes*/
   --night: #1a1d21;
@@ -30,14 +41,20 @@
 :root[data-theme="dark"] {
   --kq-red: #e23a52;
   --kq-red-deep: #b8203a;
+  --kq-red-text: #e65267;
   --ink: #e9e7e4;
   --ink-soft: #a3a8ae;
   --surface: #1c1f23;
   --canvas: #131518;
   --line: #30343a;
+  --line-strong: #626a76;
   --high: #e23a52;
   --medium: #eb9a3a;
   --low: #45b377;
+  --on-medium: #131518;
+  --on-low: #131518;
+  --medium-text: #eb9a3a;
+  --low-text: #45b377;
   --night: #0c0d0f;
   color-scheme: dark;
 }
@@ -45,14 +62,20 @@
   :root:not([data-theme="light"]) {
     --kq-red: #e23a52;
     --kq-red-deep: #b8203a;
+    --kq-red-text: #e65267;
     --ink: #e9e7e4;
     --ink-soft: #a3a8ae;
     --surface: #1c1f23;
     --canvas: #131518;
     --line: #30343a;
+    --line-strong: #626a76;
     --high: #e23a52;
     --medium: #eb9a3a;
     --low: #45b377;
+    --on-medium: #131518;
+    --on-low: #131518;
+    --medium-text: #eb9a3a;
+    --low-text: #45b377;
     --night: #0c0d0f;
     color-scheme: dark;
   }
@@ -67,20 +90,68 @@
   --color-surface: var(--surface);
   --color-canvas: var(--canvas);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-high: var(--high);
   --color-medium: var(--medium);
   --color-low: var(--low);
+  --color-on-medium: var(--on-medium);
+  --color-on-low: var(--on-low);
+  --color-medium-text: var(--medium-text);
+  --color-low-text: var(--low-text);
   --color-night: var(--night);
 
   --font-sans: var(--font-body);
   --font-heading: var(--font-heading);
-}
-body {
-  background: var(--canvas);
-  color: var(--ink);
-  font-family: var(--font-body), system-ui, sans-serif;
+
+  /*Phase 8 (Part D): one gentle entrance, used by dashboard card lists + timeline steps.*/
+  --animate-fade-up: fade-up 220ms ease-out both;
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+  }
 }
 
-h1, h2, h3, h4 {
-  font-family: var(--font-heading), system-ui, sans-serif;
+/*Phase 8 - red TEXT reads through one token. In light it equals --kq-red (no change); in dark it
+  is lifted to --kq-red-text for >= 4.5:1. One rule here instead of editing 61 class names.*/
+@layer utilities {
+  .text-kq-red { color: var(--kq-red-text); }
+}
+
+@layer base {
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-body), system-ui, sans-serif;
+    /*Phase 8 (Part D): a soft cross-fade when the theme toggles.*/
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading), system-ui, sans-serif;
+  }
+
+  /*Phase 8 (audit): Tailwind v4 no longer gives buttons a pointer cursor - restore it.*/
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  select:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+
+  /*Phase 8 (audit): a visible keyboard focus ring on every control, in the brand red.
+    In the base layer, so inputs that use `outline-none` + their own focus ring keep theirs.*/
+  :focus-visible {
+    outline: 2px solid var(--kq-red);
+    outline-offset: 2px;
+  }
+}
+
+/*Phase 8 (Part D / audit): honour the OS "reduce motion" setting everywhere.*/
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

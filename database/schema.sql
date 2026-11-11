@@ -25,6 +25,12 @@ CREATE TABLE departments (
 );
 
 INSERT INTO departments (name) VALUES ('Unassigned');
+-- Phase 8 (migration 017): a realistic corporate department set for the demo.
+INSERT INTO departments (name) VALUES
+  ('Operations'), ('Commercial'), ('Finance'), ('Information Technology'), ('Human Resources'),
+  ('Legal, Risk & Compliance'), ('Cargo'), ('Quality, Safety & Environment'),
+  ('Strategy & Innovation'), ('Technical')
+ON CONFLICT (name) DO NOTHING;
 
 
 -- users

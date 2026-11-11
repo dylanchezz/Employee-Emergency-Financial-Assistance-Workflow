@@ -21,6 +21,7 @@ import {
   statusStyle,
   type MyRequest,
 } from "@/app/lib/requestStatus";
+import { formatAmount, formatDate } from "@/app/lib/format";
 
 const VIEWS = [
   { key: "all", label: "All" },
@@ -144,7 +145,7 @@ function MyRequests() {
                 </span>
               </div>
               <p className="mt-1 text-sm text-ink-soft">
-                KES {r.amount.toLocaleString()} · submitted {new Date(r.createdAt).toLocaleDateString()}
+                KES {formatAmount(r.amount)} · submitted {formatDate(r.createdAt)}
               </p>
             </div>
             <span className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${statusStyle(r.status)}`}>

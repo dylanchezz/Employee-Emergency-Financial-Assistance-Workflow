@@ -149,7 +149,7 @@ export default function NewRequestPage() {
   }
 
   const fieldClass =
-    "mt-1.5 w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20";
+    "mt-1.5 w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20";
 
   return (
     // Phase 3: content inside the AppShell (the sidebar replaces the old "Back to dashboard",
@@ -232,7 +232,7 @@ export default function NewRequestPage() {
 
           {/* Live amount-vs-salary signal — mirrors the server's 1.5x review rule. */}
           {overSalaryThreshold && (
-            <p className="mt-2 text-sm text-medium" role="status">
+            <p className="mt-2 text-sm text-medium-text" role="status">
               This amount is more than 1.5× the salary entered, so it will be
               flagged for closer review. You can still submit it.
             </p>
@@ -310,7 +310,7 @@ export default function NewRequestPage() {
             </p>
           )}
           {success && (
-            <p className="mt-5 text-sm text-low" role="status">
+            <p className="mt-5 text-sm text-low-text" role="status">
               {success}{" "}
               <Link href="/track" className="font-medium text-kq-red hover:underline">Track it →</Link>
             </p>

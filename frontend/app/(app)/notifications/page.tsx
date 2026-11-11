@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/app/lib/api";
+import { formatDateTime } from "@/app/lib/format";
 
 type Notification = {
   notificationId: number;
@@ -100,7 +101,7 @@ export default function NotificationsPage() {
             <span className="min-w-0 flex-1">
               <span className={n.isRead ? "" : "font-medium"}>{n.message}</span>
               <span className="mt-1 block text-xs text-ink-soft">
-                Request #{n.requestId} · {new Date(n.sentAt).toLocaleString()}
+                Request #{n.requestId} · {formatDateTime(n.sentAt)}
               </span>
             </span>
           </button>

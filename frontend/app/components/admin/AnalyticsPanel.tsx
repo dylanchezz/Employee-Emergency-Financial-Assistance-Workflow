@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch, downloadFile } from "../../lib/api";
 import { statusStyle } from "../../lib/requestStatus";
+import { formatTime } from "@/app/lib/format";
 
 type Active = { windowMinutes: number; definition: string; count: number;
   users: { userId: number; name: string; role: string; department: string; lastSeenAt: string }[] };
@@ -32,6 +33,7 @@ export default function AnalyticsPanel() {
   const [days, setDays] = useState(30);
   const [dlMsg, setDlMsg] = useState("");
   const [error, setError] = useState("");
+  const [showEmptyDepts, setShowEmptyDepts] = useState(false);   // Phase 8: hide 0-request departments
 
   useEffect(() => {
     Promise.all([
@@ -73,7 +75,7 @@ export default function AnalyticsPanel() {
               {active.users.slice(0, 8).map((u) => (
                 <li key={u.userId} className="flex justify-between gap-3">
                   <span className="min-w-0 truncate text-ink">{u.name} <span className="text-ink-soft">· {u.role}</span></span>
-                  <span className="shrink-0 text-xs text-ink-soft">{new Date(u.lastSeenAt).toLocaleTimeString()}</span>
+                  <span className="shrink-0 text-xs text-ink-soft">{formatTime(u.lastSeenAt)}</span>
                 </li>
               ))}
             </ul>
@@ -117,9 +119,11 @@ export default function AnalyticsPanel() {
 
       {/* F5 */}
       <h3 className="mt-8 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">Requests by department</h3>
-      <p className="text-sm text-ink-soft">By the employee&apos;s current department.</p>
+      <p className="text-sm text-ink-soft">By the employee&apos;s current department — busiest first.</p>
+      {/* Phase 8 (UI pass): departments with no requests are folded into one line, so the section
+          shows the departments that matter instead of a wall of zero cards. */}
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {depts.map((d) => (
+        {[...depts].sort((a, b) => b.total - a.total).filter((d) => showEmptyDepts || d.total > 0).map((d) => (
           <div key={d.department} className="rounded-2xl border border-line bg-surface p-4">
             <div className="flex items-baseline justify-between gap-2">
               <p className="font-medium text-ink">{d.department}</p>
@@ -135,6 +139,14 @@ export default function AnalyticsPanel() {
           </div>
         ))}
       </div>
+      {depts.some((d) => d.total === 0) && (
+        <p className="mt-3 text-sm text-ink-soft">
+          {showEmptyDepts ? "Showing every department. " : `${depts.filter((d) => d.total === 0).length} department(s) with no requests yet: ${depts.filter((d) => d.total === 0).map((d) => d.department).join(", ")}. `}
+          <button onClick={() => setShowEmptyDepts((s) => !s)} className="font-medium text-kq-red hover:underline">
+            {showEmptyDepts ? "Hide empty departments" : "Show them"}
+          </button>
+        </p>
+      )}
 
       {/* F7 + F8 */}
       <h3 className="mt-8 font-[family-name:var(--font-heading)] text-lg font-semibold text-ink">Downloads (CSV)</h3>
@@ -142,7 +154,7 @@ export default function AnalyticsPanel() {
         <label className="text-sm text-ink-soft">
           Period{" "}
           <select value={days} onChange={(e) => setDays(Number(e.target.value))}
-            className="ml-1 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink">
+            className="ml-1 h-10 rounded-lg border border-line-strong bg-surface px-2 text-sm text-ink">
             <option value={7}>Last 7 days</option>
             <option value={30}>Last 30 days</option>
             <option value={90}>Last 90 days</option>

@@ -73,7 +73,7 @@ export default function CompleteProfileCard({
           <select
             value={choice}
             onChange={(e) => setChoice(e.target.value)}
-            className="min-w-[14rem] rounded-lg border border-line bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
+            className="min-w-[14rem] rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-ink outline-none transition focus:border-kq-red focus:ring-2 focus:ring-kq-red/20"
           >
             <option value="" disabled>
               {departments.length ? "Choose your department" : "Loading departments…"}

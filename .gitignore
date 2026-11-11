@@ -64,3 +64,6 @@ Thumbs.db
 logs/
 ml-service/data/*.csv 
 Leftovers/
+
+.claude/
+design-system/

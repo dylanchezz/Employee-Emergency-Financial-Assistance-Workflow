@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { formatDateTime } from "@/app/lib/format";
 
 type PendingDeletion = {
   deletionId: number;
@@ -110,7 +111,7 @@ export default function DeletionRequestsQueue({ onChanged }: { onChanged?: () =>
                     {d.name} <span className="text-ink-soft">· {d.email}</span>
                   </p>
                   <p className="mt-0.5 text-sm text-ink-soft">
-                    {d.role} · {d.department} · requested {new Date(d.requestedAt).toLocaleString()}
+                    {d.role} · {d.department} · requested {formatDateTime(d.requestedAt)}
                   </p>
                   {d.reason && <p className="mt-2 text-sm text-ink">&ldquo;{d.reason}&rdquo;</p>}
                 </div>

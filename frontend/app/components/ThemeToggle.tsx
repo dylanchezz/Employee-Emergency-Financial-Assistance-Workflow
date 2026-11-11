@@ -17,7 +17,7 @@ export default function ThemeToggle() {
       onClick={() => setTheme(next)}
       aria-label={`Switch to ${next} mode`}
       title={`Switch to ${next} mode`}
-      className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-ink-soft transition hover:bg-canvas hover:text-ink"
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line text-ink-soft transition hover:bg-canvas hover:text-ink"
     >
       {theme === null ? null : theme === "dark" ? (
         // Sun — shown in dark mode (click for light).

@@ -144,7 +144,7 @@ function ChangePasswordForm() {
   }
 
   const field =
-    "mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20";
+    "mt-1 w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-kq-red focus:ring-2 focus:ring-kq-red/20";
 
   return (
     <form onSubmit={submit} className="mt-5">
@@ -171,7 +171,7 @@ function ChangePasswordForm() {
         {busy ? "Changing…" : "Change password"}
       </button>
       {error && <p className="mt-3 text-sm text-kq-red" role="alert">{error}</p>}
-      {done && <p className="mt-3 text-sm text-low" role="status">{done}</p>}
+      {done && <p className="mt-3 text-sm text-low-text" role="status">{done}</p>}
     </form>
   );
 }

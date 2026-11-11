@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../lib/api";
+import { BellIcon } from "./icons";   // Phase 8: SVG, not emoji
+import { formatDateTime } from "@/app/lib/format";
 
 type Notification = {
   notificationId: number;
@@ -81,11 +83,10 @@ export default function NotificationBell() {
     <div className="relative" ref={boxRef}>
       <button
         onClick={toggle}
-        className="relative rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink transition hover:bg-canvas"
-        aria-label="Notifications"
+        className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line text-ink transition hover:bg-canvas"
+        aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
       >
-        {/* Simple bell glyph */}
-        <span aria-hidden>🔔</span>
+        <BellIcon />
         {unread > 0 && (
           <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-kq-red px-1 text-xs font-semibold text-white">
             {unread > 9 ? "9+" : unread}
@@ -138,7 +139,7 @@ export default function NotificationBell() {
                     <span className={n.isRead ? "" : "font-medium"}>{n.message}</span>
                   </div>
                   <span className="mt-1 block text-xs text-ink-soft">
-                    {new Date(n.sentAt).toLocaleString()}
+                    {formatDateTime(n.sentAt)}
                   </span>
                 </button>
               ))
