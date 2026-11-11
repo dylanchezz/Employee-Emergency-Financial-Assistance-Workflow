@@ -109,7 +109,7 @@ function MyRequests() {
         <span className="text-sm text-ink-soft">Priority:</span>
         <Link href={hrefFor(view, null)} aria-pressed={!priority}
           className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-            !priority ? "bg-ink text-white" : "border border-line bg-surface text-ink hover:bg-canvas"
+            !priority ? "bg-ink text-surface" : "border border-line bg-surface text-ink hover:bg-canvas"
           }`}>
           Any
         </Link>

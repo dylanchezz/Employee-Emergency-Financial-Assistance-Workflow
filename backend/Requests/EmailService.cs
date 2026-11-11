@@ -40,8 +40,13 @@ public class EmailService : IEmailService
             message.From.Add(new MailboxAddress(_settings.FromName, _settings.FromAddress));
             message.To.Add(MailboxAddress.Parse(toAddress));
             message.Subject = subject;
-            // Plain-text body is enough for notifications and avoids HTML-escaping pitfalls.
-            message.Body = new TextPart("plain") { Text = body };
+            // Phase 7 (G3): multipart/alternative — the original plain text PLUS a branded HTML
+            // version of the same text (EmailTemplate encodes it safely). Callers are unchanged.
+            message.Body = new BodyBuilder
+            {
+                TextBody = body,
+                HtmlBody = EmailTemplate.Render(subject, body),
+            }.ToMessageBody();
 
             using var client = new SmtpClient();
             // Brevo on port 587 uses STARTTLS (upgrade a plain connection to TLS).

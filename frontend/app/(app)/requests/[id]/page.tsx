@@ -470,7 +470,7 @@ export default function RequestDetailPage() {
               {detail.priorityLevel && (
                 <span
                   className={`rounded-full px-3 py-1 text-sm font-semibold ${
-                    PRIORITY_STYLES[detail.priorityLevel] ?? "bg-ink-soft text-white"
+                    PRIORITY_STYLES[detail.priorityLevel] ?? "bg-line text-ink-soft"
                   }`}
                 >
                   {detail.priorityLevel} priority

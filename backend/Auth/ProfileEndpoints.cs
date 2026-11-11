@@ -129,7 +129,7 @@ public static class ProfileEndpoints
             var sent = await email.SendAsync(
                 user.Email,
                 "Security notice: your password was changed",
-                $"Hello {user.Name},\n\nThe password for your Welfare Assistance account was changed at " +
+                $"Hello {user.Name},\n\nThe password for your Employee Welfare Portal account was changed at " +
                 $"{DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC.\n\nIf you did not do this, contact your administrator immediately.");
             logger.LogInformation("Password-change notice to user {UserId}: {Result}.", userId, sent ? "sent" : "NOT sent");
 
