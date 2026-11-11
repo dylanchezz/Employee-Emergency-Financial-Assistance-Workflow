@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import DeletionRequestsQueue from "@/app/components/DeletionRequestsQueue";
+import AttentionPanel from "@/app/components/admin/AttentionPanel";
+import AnalyticsPanel from "@/app/components/admin/AnalyticsPanel";
 import { apiFetch } from "@/app/lib/api";
 import { useSession } from "@/app/lib/session";
 import { LOGIN_PATH } from "@/app/lib/auth";
@@ -41,17 +43,6 @@ type ValidationRule = {
   effect: string;
 };
 
-type AttentionItem = {
-  requestId: number;
-  requesterName: string;
-  category: string;
-  amount: number;
-  status: string;
-  currentTier: number;
-  since: string;
-  officerName: string | null;
-  officerEmail: string | null;
-};
 type AuditEntry = {
   logId: number;
   requestId: number;
@@ -68,9 +59,6 @@ export default function AdminDashboard() {
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [rules, setRules] = useState<ValidationRule[]>([]);
-  const [attention, setAttention] = useState<AttentionItem[]>([]);
-  const [nudgeMsg, setNudgeMsg] = useState<Record<number, string>>({});
-  const [nudgingId, setNudgingId] = useState<number | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -135,23 +123,7 @@ export default function AdminDashboard() {
     const result = await apiFetch<ValidationRule[]>("/admin/rules");
     if (result.ok) setRules(result.data);
   }
-    async function loadAttention() {
-    const result = await apiFetch<AttentionItem[]>("/admin/attention");
-    if (result.ok) setAttention(result.data);
-  }
-    async function nudge(requestId: number) {
-    setNudgingId(requestId);
-    setNudgeMsg((m) => ({ ...m, [requestId]: "" }));
-    const result = await apiFetch<{ message: string }>(
-      `/admin/attention/${requestId}/nudge`,
-      { method: "POST" }
-    );
-    setNudgingId(null);
-    setNudgeMsg((m) => ({
-      ...m,
-      [requestId]: result.ok ? result.data.message : result.error,
-    }));
-  }
+    // Phase 6: the attention list + reminder "nudge" moved into components/admin/AttentionPanel.
     async function loadAudit() {
     const result = await apiFetch<AuditEntry[]>("/admin/audit");
     if (result.ok) setAudit(result.data);
@@ -161,7 +133,6 @@ export default function AdminDashboard() {
     loadUsers();
     loadDepartments();
     loadRules();
-    loadAttention();
     loadAudit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
@@ -273,68 +244,11 @@ export default function AdminDashboard() {
           </p>
         </div>
 
-        {/* Needs attention — requests the escalation worker has flagged for admin follow-up. */}
-        {attention.length > 0 && (
-          <div className="mt-8">
-            <h2 className="font-[family-name:var(--font-heading)] text-xl font-semibold text-ink">
-              Needs your attention
-            </h2>
-            <p className="mt-1 text-sm text-ink-soft">
-              Requests stuck at HR beyond the response window, or deferred too long.
-            </p>
-            <div className="mt-4 space-y-3">
-              {attention.map((a) => (
-                <div
-                  key={a.requestId}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => router.push(`/requests/${a.requestId}`)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") router.push(`/requests/${a.requestId}`);
-                  }}
-                  className="block w-full cursor-pointer rounded-2xl border border-medium/50 bg-surface p-4 text-left transition hover:bg-canvas"
-                >
-                  <div className="flex items-baseline justify-between gap-4">
-                    <span className="font-medium text-ink">
-                      Request #{a.requestId} · {a.requesterName}
-                    </span>
-                    <span className="shrink-0 rounded-full bg-medium px-2.5 py-0.5 text-xs font-semibold text-white">
-                      {a.status}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-ink-soft">
-                    {a.category} · KES {a.amount.toLocaleString()} · waiting since{" "}
-                    {new Date(a.since).toLocaleString()}
-                  </p>
-                  <p className="mt-1 text-xs text-ink-soft">
-                    {a.officerName
-                      ? `Responsible officer: ${a.officerName}${a.officerEmail ? ` (${a.officerEmail})` : ""}`
-                      : "Unclaimed in the HR queue — no officer has taken it."}
-                  </p>
-                  {a.officerName && (
-                    <div
-                      className="mt-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        onClick={() => nudge(a.requestId)}
-                        disabled={nudgingId === a.requestId}
-                        className="rounded-lg border border-kq-red px-3 py-1.5 text-xs font-medium text-kq-red transition hover:bg-kq-red hover:text-white disabled:opacity-60"
-                      >
-                        {nudgingId === a.requestId ? "Sending…" : "Send reminder email"}
-                      </button>
-                      {nudgeMsg[a.requestId] && (
-                        <span className="ml-2 text-xs text-ink-soft">
-                          {nudgeMsg[a.requestId]}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Phase 6 (F1 + F2): grouped by priority, each with its own audit box. */}
+        <AttentionPanel />
+
+        {/* Phase 6 (F3, F4, F5, F7, F8): active users, users by role, per-department requests, CSVs. */}
+        <AnalyticsPanel />
 
         <div className="mt-8 flex items-center justify-between">
           <h2 className="font-[family-name:var(--font-heading)] text-xl font-semibold text-ink">

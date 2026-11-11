@@ -54,6 +54,7 @@ builder.Services.AddScoped<ITwoFactorCodeRepository, TwoFactorCodeRepository>();
 builder.Services.AddScoped<IDepartmentRepository, DepartmentRepository>();   // D1
 builder.Services.AddScoped<IDisbursementRepository, DisbursementRepository>();   // D2
 builder.Services.AddScoped<IAccountDeletionRepository, AccountDeletionRepository>();   // C2
+builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();   // Phase 6
 
 // A3 Google sign-in: settings (secret from gitignored config only) + a typed HttpClient for
 // the server-to-server code exchange with Google.
@@ -127,7 +128,10 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins("http://localhost:3000")
         .AllowAnyHeader()
-        .AllowAnyMethod();
+        .AllowAnyMethod()
+        // Phase 6 (Part C): let the frontend read the CSV downloads' file name. Content-Disposition
+        // isn't a CORS-safelisted response header, so cross-origin JS can't see it unless exposed.
+        .WithExposedHeaders("Content-Disposition");
     });  
 });
 
@@ -146,6 +150,7 @@ if (app.Environment.IsDevelopment())
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UsePresenceTracking();   // Phase 6 (F3): throttled users.last_seen_at
 
 app.MapGet("/", () => "Welfare Assistance API is running");
 
@@ -173,6 +178,7 @@ app.MapGoogleAuthEndpoints();
 app.MapDepartmentEndpoints();   // D1
 app.MapAccountDeletionEndpoints();   // C2
 app.MapProfileEndpoints();   // Phase 3 (C1/A6)
+app.MapAdminAnalyticsEndpoints();   // Phase 6
 app.MapProtectedTestEndpoints();
 app.MapRequestEndpoints();
 app.MapNotificationEndpoints();

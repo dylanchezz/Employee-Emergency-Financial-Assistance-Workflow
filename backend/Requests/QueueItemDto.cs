@@ -27,4 +27,7 @@ public class AdminAttentionItem
     public DateTime Since { get; set; }
     public string? OfficerName { get; set; }
     public string? OfficerEmail { get; set; }
+    // Phase 6 (F1): the request's latest predicted priority (null = Unclassified) — the admin
+    // groups the attention list by it.
+    public string? PriorityLevel { get; set; }
 }
