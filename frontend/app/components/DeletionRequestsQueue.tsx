@@ -19,7 +19,8 @@ type PendingDeletion = {
   requestedAt: string;
 };
 
-export default function DeletionRequestsQueue({ onChanged }: { onChanged?: () => void }) {
+// showHeading=false when the page already has its own title (the /admin/account-requests page).
+export default function DeletionRequestsQueue({ onChanged, showHeading = true }: { onChanged?: () => void; showHeading?: boolean }) {
   const [items, setItems] = useState<PendingDeletion[]>([]);
   const [loadError, setLoadError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -80,13 +81,17 @@ export default function DeletionRequestsQueue({ onChanged }: { onChanged?: () =>
   }
 
   return (
-    <section>
-      <h2 className="mt-10 font-[family-name:var(--font-heading)] text-xl font-semibold text-ink">
-        Deletion requests
-      </h2>
-      <p className="mt-1 text-sm text-ink-soft">
-        Approving deactivates the account (soft-delete): no more sign-in, but its history is kept for the audit trail.
-      </p>
+    <section className={showHeading ? "" : "mt-2"}>
+      {showHeading && (
+        <>
+          <h2 className="mt-10 font-[family-name:var(--font-heading)] text-xl font-semibold text-ink">
+            Deletion requests
+          </h2>
+          <p className="mt-1 text-sm text-ink-soft">
+            Approving deactivates the account (soft-delete): no more sign-in, but its history is kept for the audit trail.
+          </p>
+        </>
+      )}
 
       {message && <p className="mt-3 text-sm text-ink">{message}</p>}
       {loadError && (

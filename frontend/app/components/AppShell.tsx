@@ -20,6 +20,7 @@ import ThemeToggle from "./ThemeToggle";   // Phase 7 (G2)
 import {
   BanknoteIcon, CheckCircleIcon, ChevronsLeftIcon, CloseIcon, DashboardIcon, FolderIcon, InboxIcon,
   LogOutIcon, MenuIcon, PlusIcon, RouteIcon, ShieldIcon, UserIcon, BellIcon, XCircleIcon,
+  UsersIcon, BuildingIcon, UserMinusIcon, RulesIcon, ActivityIcon,
 } from "./icons";
 import Avatar from "./Avatar";
 import { apiFetch } from "../lib/api";
@@ -56,7 +57,21 @@ function navFor(role: string | null): NavSection[] {
   };
 
   if (role === "System Administrator") {
-    return [{ title: "Administration", items: [{ href: "/dashboard/admin", label: "Admin dashboard", icon: ShieldIcon }] }, account];
+    // Phase 8 follow-up: each admin section is its own page (was a tab on the dashboard).
+    return [
+      { title: "Administration", items: [{ href: "/dashboard/admin", label: "Dashboard", icon: ShieldIcon }] },
+      {
+        title: "Manage",
+        items: [
+          { href: "/admin/users", label: "Users", icon: UsersIcon },
+          { href: "/admin/departments", label: "Departments", icon: BuildingIcon },
+          { href: "/admin/account-requests", label: "Account requests", icon: UserMinusIcon },
+          { href: "/admin/rules", label: "Rules", icon: RulesIcon },
+          { href: "/admin/activity", label: "Activity", icon: ActivityIcon },
+        ],
+      },
+      account,
+    ];
   }
   if (isApproverRole(role)) {
     const review: NavItem[] = [{ href: "/dashboard/approver", label: "Review queue", icon: InboxIcon }];

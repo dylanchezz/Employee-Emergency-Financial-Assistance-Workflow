@@ -90,3 +90,20 @@ export const ChevronsLeftIcon = (p: IconProps) => (
 export const CloseIcon = (p: IconProps) => (
   <Svg {...p}><path d="M18 6 6 18M6 6l12 12" /></Svg>
 );
+
+// ---- Admin area navigation (Users / Departments / Account requests / Rules / Activity) ----
+export const UsersIcon = (p: IconProps) => (
+  <Svg {...p}><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5" /></Svg>
+);
+export const BuildingIcon = (p: IconProps) => (
+  <Svg {...p}><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2M10 21v-3h4v3" /></Svg>
+);
+export const UserMinusIcon = (p: IconProps) => (
+  <Svg {...p}><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><path d="M16 11h6" /></Svg>
+);
+export const RulesIcon = (p: IconProps) => (
+  <Svg {...p}><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 3h6v3H9z" /><path d="m9 12 1.5 1.5L14 10M9 17h6" /></Svg>
+);
+export const ActivityIcon = (p: IconProps) => (
+  <Svg {...p}><path d="M3 12h4l3-8 4 16 3-8h4" /></Svg>
+);
