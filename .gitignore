@@ -68,5 +68,5 @@ Leftovers/
 .claude/
 design-system/
 
-# Local deployment notes (kept out of the repo)
-/DEPLOYMENT.md
+# Vercel CLI project link (local)
+.vercel

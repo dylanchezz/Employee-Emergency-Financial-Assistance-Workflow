@@ -1,0 +1,9 @@
+# CLI deploys (`vercel deploy`) upload ONLY the Next.js frontend — never the backend config
+# (appsettings.Development.json holds secrets), Leftovers/, the Python venv, or local env files.
+# (Git-connected deploys build from GitHub, which already excludes git-ignored files.)
+/*
+!/frontend
+/frontend/node_modules
+/frontend/.next
+/frontend/.env*
+!/frontend/.env.example

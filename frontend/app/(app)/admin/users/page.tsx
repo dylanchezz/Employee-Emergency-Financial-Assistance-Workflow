@@ -5,6 +5,7 @@
 // ?create=1 opens the create form (the dashboard's "+ Create user" button links here).
 
 import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/app/lib/api";
 import { LOGIN_PATH } from "@/app/lib/auth";
@@ -237,6 +238,10 @@ function UsersInner() {
                         )}
                       </p>
                       <p className="break-all text-xs text-ink-soft">{u.email}</p>
+                      <Link href={`/admin/users/${u.userId}/history`}
+                        className="mt-1 inline-block text-xs font-medium text-kq-red hover:underline">
+                        Request history →
+                      </Link>
                     </td>
                     <td className="px-4 py-3">
                       {/* D1: admin sets any user's department (users can only choose once). */}
