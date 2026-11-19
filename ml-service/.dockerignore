@@ -1,0 +1,15 @@
+notebooks/
+data/*.csv
+models/*.joblib
+models/*.pkl
+evaluation/
+__pycache__/
+**/__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.env
+.env.*
+Dockerfile
+.dockerignore
