@@ -6,6 +6,7 @@ import { apiFetch } from "@/app/lib/api";
 import { PRIORITY_STYLES, statusLabel, statusStyle } from "@/app/lib/requestStatus";
 import { TierProgress } from "@/app/components/ui/Ui";
 import RequestTimeline from "@/app/components/RequestTimeline";
+import RequesterHistory from "@/app/components/RequesterHistory";
 import { LOGIN_PATH } from "@/app/lib/auth";
 import { formatAmount, formatDate, formatDateTime } from "@/app/lib/format";
 
@@ -629,6 +630,17 @@ export default function RequestDetailPage() {
                 </h2>
                 <RequestTimeline request={detail} viewerIsOwner={isOwner} />
                 </section>
+
+                {/* Requester history: the employee's OTHER requests in full (decisions, deferrals,
+                    payouts, activity) — context for the approver's decision. Staff only (never on
+                    your own request); the endpoint also refuses non-staff. */}
+                {(isApprover || isAdmin) && !isOwner && (
+                  <RequesterHistory
+                    userId={detail.requesterId}
+                    excludeRequestId={detail.requestId}
+                    title={`${detail.requesterName}'s other requests`}
+                  />
+                )}
 
                 {/* Edit & resubmit — owner only, while the request is Returned. */}
                 {canResubmit && (

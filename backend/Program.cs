@@ -56,6 +56,7 @@ builder.Services.AddScoped<IDisbursementRepository, DisbursementRepository>();  
 builder.Services.AddScoped<IAccountDeletionRepository, AccountDeletionRepository>();   // C2
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();   // Phase 6
 builder.Services.AddScoped<IPasswordResetRepository, PasswordResetRepository>();   // Phase 7 (A4)
+builder.Services.AddScoped<IRequestHistoryRepository, RequestHistoryRepository>();   // requester history
 builder.Services.AddSingleton<LoginThrottle>();   // Phase 7 (A1): unknown-email twin of the DB lock
 
 // A3 Google sign-in: settings (secret from gitignored config only) + a typed HttpClient for
@@ -189,6 +190,7 @@ app.MapAdminAnalyticsEndpoints();   // Phase 6
 app.MapPasswordResetEndpoints();   // Phase 7 (A4)
 app.MapProtectedTestEndpoints();
 app.MapRequestEndpoints();
+app.MapRequestHistoryEndpoints();   // staff + admin: an employee's full request history
 app.MapNotificationEndpoints();
 app.MapAdminEndpoints();
 app.Run();
