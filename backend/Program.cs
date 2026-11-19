@@ -123,12 +123,17 @@ builder.Services.AddAuthorization(options =>
         .RequireClaim(TwoFactorPolicy.PendingClaim, "true"));
 });
 
-//Allow the Next.js dev frontend to call this API.
+//Allow the Next.js frontend to call this API. Origins come from configuration
+//(Cors:AllowedOrigins, e.g. env var Cors__AllowedOrigins__0 = the deployed frontend URL);
+//with nothing configured it falls back to the local dev frontend.
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+                  ?? new[] { "http://localhost:3000" };
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:3000")
+        policy.WithOrigins(corsOrigins)
         .AllowAnyHeader()
         .AllowAnyMethod()
         // Phase 6 (Part C): let the frontend read the CSV downloads' file name. Content-Disposition
