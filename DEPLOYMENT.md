@@ -423,9 +423,9 @@ Record:
   ```
 
   Record which image tags were live at the release, so the tag and the deployed images match. For
-  `v1.0.0` these are `welfare-backend:v2` (the backend was redeployed for the requester-history
-  feature) and `welfare-ml:v1`; the frontend code is unchanged since commit `3becbfb` (later commits are
-  documentation only). Check the live tags with
+  `v1.0.0` these are `welfare-backend:v3` and `welfare-ml:v2` (v3/v2 add the per-factor `urgency`
+  direction to the SHAP explanation and restore the 18-hour escalation window; backend v2 added
+  requester history), with the frontend at the merge of PR #82 (`bfb4d71`). Check the live tags with
   `az containerapp show -g $RG -n welfare-api --query "properties.template.containers[0].image" -o tsv`
   (and the same for `welfare-ml`).
 - The model image **build log** from C3, with the held-out metrics.
