@@ -44,4 +44,9 @@ public class ShapFactor
 
     [JsonPropertyName("impact")]
     public double Impact { get; set; }
+
+    // Push toward High minus push toward Low: > 0 raised the priority, < 0 lowered it.
+    // Null for predictions made before this field existed.
+    [JsonPropertyName("urgency")]
+    public double? Urgency { get; set; }
 }

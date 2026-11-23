@@ -422,7 +422,12 @@ Record:
   git tag v1.0.0 && git push origin v1.0.0
   ```
 
-  Use the same `v1` image tags in ACR, so the deployed images and the tag match.
+  Record which image tags were live at the release, so the tag and the deployed images match. For
+  `v1.0.0` these are `welfare-backend:v2` (the backend was redeployed for the requester-history
+  feature) and `welfare-ml:v1`; the frontend code is unchanged since commit `3becbfb` (later commits are
+  documentation only). Check the live tags with
+  `az containerapp show -g $RG -n welfare-api --query "properties.template.containers[0].image" -o tsv`
+  (and the same for `welfare-ml`).
 - The model image **build log** from C3, with the held-out metrics.
 
 ---
