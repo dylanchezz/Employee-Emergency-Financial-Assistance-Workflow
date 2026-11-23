@@ -69,23 +69,36 @@ class PriorityModel:
         #   older: list of per-class arrays, each (n_samples, n_features)
         shap_values = self.explainer.shap_values(X)
         if isinstance(shap_values, list):
-            contribs = shap_values[class_index][0]
+            per_class = np.stack([sv[0] for sv in shap_values], axis=1)  # (n_features, n_classes)
         else:
             arr = np.asarray(shap_values)
-            if arr.ndim == 3:
-                contribs = arr[0, :, class_index]
-            else:
-                contribs = arr[0]
+            per_class = arr[0] if arr.ndim == 3 else arr[0][:, None]
+        contribs = per_class[:, class_index]
 
-        # Build a readable, ranked explanation (top factors by absolute impact)
-        pairs = sorted(
-            zip(self.feature_names, contribs),
+        # Urgency direction, independent of the predicted class: a feature's push toward
+        # High minus its push toward Low. Positive = raised the priority, negative =
+        # lowered it. Needed because "toward the predicted class" has no up/down meaning
+        # when the prediction is Medium (the middle band).
+        classes = [str(c) for c in self.model.classes_]
+        if per_class.shape[1] == len(classes) and "High" in classes and "Low" in classes:
+            urgency = per_class[:, classes.index("High")] - per_class[:, classes.index("Low")]
+        else:
+            urgency = [None] * len(self.feature_names)
+
+        # Build a readable, ranked explanation (top factors by absolute impact
+        # toward the predicted class)
+        ranked = sorted(
+            zip(self.feature_names, contribs, urgency),
             key=lambda p: abs(p[1]),
             reverse=True,
         )
         explanation = [
-            {"feature": name, "impact": round(float(value), 4)}
-            for name, value in pairs[:5]
+            {
+                "feature": name,
+                "impact": round(float(value), 4),
+                "urgency": None if u is None else round(float(u), 4),
+            }
+            for name, value, u in ranked[:5]
         ]
 
         return {

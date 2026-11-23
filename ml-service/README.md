@@ -19,6 +19,7 @@ ml-service/
 │   └── train.ipynb       # exploratory notebook for training and evaluation
 ├── generate_data.py      # synthetic dataset generation (fixed seed)
 ├── train.py              # training, tuning and evaluation; saves the model
+├── compare_baselines.py  # RF vs Decision Tree vs Logistic Regression on the same split
 ├── Dockerfile            # production image (generates data and trains at build time)
 ├── .dockerignore
 └── requirements.txt
@@ -75,6 +76,29 @@ the Random Forest hyperparameters. Results on the held-out 20% (best params:
 
 Medium is the hardest class (F1 0.77), as expected for the middle band.
 
+### Baseline comparison (`compare_baselines.py`)
+
+To check the choice of model, `compare_baselines.py` trains a Decision Tree and a Logistic
+Regression on the **same** seed-42 stratified 80/20 split, each tuned by the same stratified
+5-fold cross-validation (macro-F1), and evaluates them alongside the selected Random Forest on the
+same held-out test set:
+
+```bash
+python compare_baselines.py   # needs data/welfare_requests.csv; prints results only, writes no files
+```
+
+| Model | Accuracy | Precision (macro) | Recall (macro) | F1 (macro) |
+|---|---|---|---|---|
+| Random Forest (deployed) | 0.8530 | 0.8510 | 0.8526 | 0.8511 |
+| Decision Tree | 0.8030 | 0.8023 | 0.8026 | 0.8024 |
+| Logistic Regression | 0.8680 | 0.8689 | 0.8678 | 0.8682 |
+
+Logistic Regression scores slightly higher here because the synthetic labels come from a weighted
+**additive** scoring function, so the band boundaries are close to linear and a linear model
+recovers them well. Random Forest remains the deployed classifier for its capacity to model
+non-linear interactions, its robustness, its feature importances and its per-request SHAP
+explanations; its advantage is expected on real, non-linear welfare data. See Chapter 5.
+
 ### Reproducibility
 
 Both scripts use a fixed random seed (42), so the features, labels, split and model are
@@ -115,20 +139,28 @@ Request:
 `Hardship/Emergency Assistance`, `Education Support`.
 
 Response — the priority plus the five features with the largest SHAP impact for the predicted
-class (positive pushes toward that class):
+class:
 
 ```json
 {
   "priority": "High",
   "explanation": [
-    { "feature": "request_category_Medical Emergency", "impact": 0.2022 },
-    { "feature": "request_frequency", "impact": 0.1388 },
-    { "feature": "request_category_Education Support", "impact": 0.1041 },
-    { "feature": "has_documents", "impact": 0.0714 },
-    { "feature": "requested_amount", "impact": 0.0618 }
+    { "feature": "request_category_Medical Emergency", "impact": 0.2022, "urgency": 0.3259 },
+    { "feature": "request_frequency", "impact": 0.1388, "urgency": 0.2189 },
+    { "feature": "request_category_Education Support", "impact": 0.1041, "urgency": 0.2039 },
+    { "feature": "has_documents", "impact": 0.0714, "urgency": 0.1167 },
+    { "feature": "requested_amount", "impact": 0.0618, "urgency": 0.0991 }
   ]
 }
 ```
+
+- `impact` is the SHAP value toward the **predicted** class (positive pushes toward it). It ranks
+  the factors and sizes the bars.
+- `urgency` is the factor's SHAP value toward **High** minus its value toward **Low**: positive
+  means it raised the priority, negative means it lowered it. It is needed because "toward the
+  predicted class" has no up/down meaning when the prediction is Medium — e.g. a request without
+  documents rated Medium gets a positive `impact` for `has_documents` (it pulled the request down
+  *into* Medium) but a negative `urgency` (it lowered the priority).
 
 The backend stores both values and turns the explanation into the plain-language
 "Why this priority?" panel shown to approvers.

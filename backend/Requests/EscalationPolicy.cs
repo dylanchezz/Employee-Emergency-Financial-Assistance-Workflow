@@ -1,13 +1,13 @@
 namespace backend.Requests;
 
 // Time windows for automatic escalation, in one place so they're easy to change.
-// The tier window is intentionally SHORT for the demo; the documented production
-// value is 18 hours. The others match the documented policy.
+// All values match the documented policy.
 public static class EscalationPolicy
 {
     // How long a request may sit In-Review at a tier before it escalates.
-    // Demo value: 1 minute. Production: TimeSpan.FromHours(18).
-    public static readonly TimeSpan TierResponseWindow = TimeSpan.FromMinutes(1);
+    // Documented policy: 18 hours. (For a quick escalation demo, temporarily use
+    // TimeSpan.FromMinutes(1) locally.)
+    public static readonly TimeSpan TierResponseWindow = TimeSpan.FromHours(18);
 
     // How long a Returned request may wait for the employee's clarification
     // before it is auto-rejected. Documented: 7 days.

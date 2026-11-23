@@ -87,9 +87,9 @@ const FILTERS: { key: Filter; label: string; match: (r: HistoricalRequest) => bo
 const roleForTier = (t: number) => TIER_ROLES[t - 1] ?? `Tier ${t}`;
 
 // The model's top reasons, in a few words each (the detail page has the full explanation).
-function topFactors(r: HistoricalRequest): { text: string; up: boolean }[] {
+function topFactors(r: HistoricalRequest): { text: string; up: boolean | null }[] {
   if (!r.explanation || !r.priorityLevel) return [];
-  let factors: { feature: string; impact: number }[] = [];
+  let factors: { feature: string; impact: number; urgency?: number | null }[] = [];
   try { factors = JSON.parse(r.explanation); } catch { return []; }
   const label = (f: string): string | null => {
     if (f.startsWith("request_category_")) {
@@ -108,11 +108,20 @@ function topFactors(r: HistoricalRequest): { text: string; up: boolean }[] {
   return factors
     .map((f) => {
       const text = label(f.feature);
-      // Same direction rule as the detail page: SHAP sign is relative to the predicted class.
-      const up = r.priorityLevel === "Low" ? f.impact < 0 : f.impact >= 0;
+      // Same direction rule as the detail page: the model's `urgency` (toward High minus
+      // toward Low) when present; older predictions fall back to the class-relative
+      // impact sign, which has no up/down meaning for Medium (shown neutral).
+      const up: boolean | null =
+        typeof f.urgency === "number"
+          ? f.urgency >= 0
+          : r.priorityLevel === "High"
+            ? f.impact >= 0
+            : r.priorityLevel === "Low"
+              ? f.impact < 0
+              : null;
       return text ? { text, up } : null;
     })
-    .filter((x): x is { text: string; up: boolean } => x !== null)
+    .filter((x): x is { text: string; up: boolean | null } => x !== null)
     .slice(0, 3);
 }
 
@@ -334,7 +343,7 @@ function HistoryCard({ r, expanded, onToggle }: { r: HistoricalRequest; expanded
               <ul className="mt-1.5 flex flex-wrap gap-2">
                 {factors.map((f) => (
                   <li key={f.text} className="rounded-full border border-line bg-canvas px-2.5 py-0.5 text-xs text-ink">
-                    {f.text} <span className={f.up ? "text-high" : "text-low-text"}>{f.up ? "↑ higher" : "↓ lower"}</span>
+                    {f.text} <span className={f.up === null ? "text-medium-text" : f.up ? "text-high" : "text-low-text"}>{f.up === null ? "• rating" : f.up ? "↑ higher" : "↓ lower"}</span>
                   </li>
                 ))}
               </ul>

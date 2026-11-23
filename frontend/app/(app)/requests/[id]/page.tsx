@@ -27,7 +27,11 @@ const RESUBMIT_DESCRIPTION_TEMPLATES: Record<string, string> = {
   "Education Support": "Requesting education support for ",
 };
 
-type ShapFactor = { feature: string; impact: number };
+// impact  = SHAP push toward the PREDICTED class (used for ranking and bar length).
+// urgency = push toward High minus push toward Low (> 0 raised the priority). Absent on
+//           predictions made before the model service returned it.
+type ShapFactor = { feature: string; impact: number; urgency?: number | null };
+type FactorDirection = "up" | "down" | "neutral";
 type ApprovalItem = {
   tier: number;
   approverName: string;
@@ -92,27 +96,33 @@ function currentUserId(): number | null {
 function describeFactor(
   factor: ShapFactor,
   detail: RequestDetail
-): { text: string; raisesPriority: boolean } | null {
-  const { feature, impact } = factor;
+): { text: string; direction: FactorDirection } | null {
+  const { feature, impact, urgency } = factor;
 
-  // Convert the class-relative SHAP sign into an urgency direction, using the
-  // predicted class. Positive impact pushes TOWARD the predicted class:
-  //   predicted High  → toward High  = higher priority
-  //   predicted Low   → toward Low   = lower priority (inverted)
-  //   predicted Medium→ no clean higher/lower (sign used as-is)
+  // Urgency direction. Preferred: the model's `urgency` (push toward High minus push
+  // toward Low), which is correct for every predicted class. Fallback for older
+  // predictions without it, from the class-relative `impact` sign:
+  //   predicted High → toward High = higher; predicted Low → toward Low = lower;
+  //   predicted Medium → no up/down meaning, so shown as neutral.
   const priority = detail.priorityLevel;
-  let raisesPriority: boolean;
-  if (priority === "High") raisesPriority = impact >= 0;
-  else if (priority === "Low") raisesPriority = impact < 0;
-  else raisesPriority = impact >= 0;
+  let direction: FactorDirection;
+  if (typeof urgency === "number") direction = urgency >= 0 ? "up" : "down";
+  else if (priority === "High") direction = impact >= 0 ? "up" : "down";
+  else if (priority === "Low") direction = impact < 0 ? "up" : "down";
+  else direction = "neutral";
 
-  const dir = raisesPriority ? "pushed toward higher priority" : "pushed toward lower priority";
+  const dir =
+    direction === "up"
+      ? "pushed toward higher priority"
+      : direction === "down"
+        ? "pushed toward lower priority"
+        : `influenced the ${priority ?? "assigned"} rating`;
 
   // Category one-hot features: only describe the request's ACTUAL category; hide the rest.
   if (feature.startsWith("request_category_")) {
     const cat = feature.replace("request_category_", "");
     if (cat !== detail.category) return null; // hide "not this category" noise
-    return { text: `This is a ${cat} request — ${dir}`, raisesPriority };
+    return { text: `This is a ${cat} request — ${dir}`, direction };
   }
 
   // Numeric / boolean features, phrased with the request's real value.
@@ -122,20 +132,20 @@ function describeFactor(
         text: detail.hasDocuments
           ? `Supporting documents were provided — ${dir}`
           : `No supporting documents were provided — ${dir}`,
-        raisesPriority,
+        direction,
       };
     case "requested_amount":
-      return { text: `Requested amount (KES ${formatAmount(detail.amount)}) — ${dir}`, raisesPriority };
+      return { text: `Requested amount (KES ${formatAmount(detail.amount)}) — ${dir}`, direction };
     case "salary":
-      return { text: `Stated salary — ${dir}`, raisesPriority };
+      return { text: `Stated salary — ${dir}`, direction };
     case "employment_duration_months":
-      return { text: `Length of employment — ${dir}`, raisesPriority };
+      return { text: `Length of employment — ${dir}`, direction };
     case "previous_requests":
-      return { text: `Number of previous requests — ${dir}`, raisesPriority };
+      return { text: `Number of previous requests — ${dir}`, direction };
     case "request_frequency":
-      return { text: `How often requests are made — ${dir}`, raisesPriority };
+      return { text: `How often requests are made — ${dir}`, direction };
     default:
-      return { text: `${feature} — ${dir}`, raisesPriority };
+      return { text: `${feature} — ${dir}`, direction };
   }
 }
 
@@ -373,7 +383,7 @@ export default function RequestDetailPage() {
     ? rawFactors
         .map((f) => ({ factor: f, d: describeFactor(f, detail) }))
         .filter(
-          (x): x is { factor: ShapFactor; d: { text: string; raisesPriority: boolean } } =>
+          (x): x is { factor: ShapFactor; d: { text: string; direction: FactorDirection } } =>
             x.d !== null
         )
     : [];
@@ -383,7 +393,9 @@ export default function RequestDetailPage() {
   const summary = (() => {
     if (!detail?.priorityLevel || described.length === 0) return null;
     const drivers = described
-      .filter((x) => x.d.raisesPriority === (detail.priorityLevel !== "Low"))
+      // A "driver" is a factor that pushed the request TOWARD the class it got (positive
+      // impact) — correct for High, Medium and Low alike.
+      .filter((x) => x.factor.impact > 0)
       .slice(0, 2)
       .map((x) => x.d.text.split(" — ")[0].replace(/^This is a /, "").toLowerCase());
     if (drivers.length === 0) {
@@ -592,18 +604,22 @@ export default function RequestDetailPage() {
                     <div className="mt-4 space-y-3">
                       {described.map((x) => {
                         const width = `${(Math.abs(x.factor.impact) / maxImpact) * 100}%`;
-                        const up = x.d.raisesPriority;
+                        const dir = x.d.direction;
+                        const tone =
+                          dir === "up"
+                            ? { text: "text-high", bar: "bg-high", label: "↑ higher" }
+                            : dir === "down"
+                              ? { text: "text-low-text", bar: "bg-low", label: "↓ lower" }
+                              : { text: "text-medium-text", bar: "bg-medium", label: "• rating" };
                         return (
                           <div key={x.factor.feature}>
                             <div className="flex items-center justify-between gap-3 text-sm">
                               <span className="text-ink">{x.d.text}</span>
-                              <span className={`shrink-0 ${up ? "text-high" : "text-low-text"}`}>
-                                {up ? "↑ higher" : "↓ lower"}
-                              </span>
+                              <span className={`shrink-0 ${tone.text}`}>{tone.label}</span>
                             </div>
                             <div className="mt-1 h-2 w-full rounded-full bg-canvas">
                               <div
-                                className={`h-2 rounded-full ${up ? "bg-high" : "bg-low"}`}
+                                className={`h-2 rounded-full ${tone.bar}`}
                                 style={{ width }}
                               />
                             </div>
